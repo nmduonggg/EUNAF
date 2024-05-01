@@ -9,8 +9,8 @@ parser.add_argument("--weight_decay",type=float, default=1e-4, help="Weight deca
 parser.add_argument("--batch_size", type=int, default=128, help="batch size")
 parser.add_argument("--epoch_step", type=int, default=20, help="epochs after which lr is decayed")
 parser.add_argument("--start_epoch", type=int, default=0, help="starting point")
-parser.add_argument("--max_epochs", type=int, default=80, help="total epochs to run")
-parser.add_argument("--loss", default="L2", help="loss function")
+parser.add_argument("--max_epochs", type=int, default=300, help="total epochs to run")
+parser.add_argument("--loss", default="L1", help="loss function")
 parser.add_argument("--val-each", type=int, default='5', help='Validation each n epochs')
 parser.add_argument("--weight", help='Weight path')
 
@@ -18,6 +18,19 @@ parser.add_argument("--weight", help='Weight path')
 # SuperNet hyper-parameters
 parser.add_argument("--nblocks", type=int, default=1, help="Number of blocks to be used")
 parser.add_argument("--N", type=int, default=-1, help='Number of test instances, only used in testing')
+
+parser.add_argument("--train_stage", type=int, default=0, choices=(0, 1, 2), help="Choose training stage for pretrain backbone, eunaf, align stages")
+# Model specifications
+parser.add_argument('--act', type=str, default='relu',help='activation function')
+parser.add_argument('--pre_train', type=str, default='',help='pre-trained model directory')
+parser.add_argument('--extend', type=str, default='.',help='pre-trained model directory')
+parser.add_argument('--n_resblocks', type=int, default=16,help='number of residual blocks')
+parser.add_argument('--n_feats', type=int, default=64,help='number of feature maps')
+parser.add_argument('--res_scale', type=float, default=1,help='residual scaling')
+parser.add_argument('--shift_mean', default=True,help='subtract pixel mean from the input')
+parser.add_argument('--dilation', action='store_true',help='use dilated convolution')
+parser.add_argument('--precision', type=str, default='single',choices=('single', 'half'),help='FP precision for test (single | half)')
+parser.add_argument('--input_channel', type=int, default=3, help='number of color channels')
 
 # test
 parser.add_argument("--visualize", action='store_true')
@@ -31,7 +44,7 @@ parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
 parser.add_argument("--max_load", default=0, type=int, help="max number of samples to use; useful for reducing loading time during debugging; 0 = load all")
 parser.add_argument("--style", default="Y", help="Y-channel or RGB style")
 parser.add_argument("--trainset_tag", default="SR291B", help="train data directory")
-parser.add_argument("--trainset_patch_size", type=int, default=21, help="train data directory")
+parser.add_argument("--trainset_patch_size", type=int, default=96, help="train data directory")
 parser.add_argument("--trainset_preload", type=int, default=0, help="train data directory")
 parser.add_argument("--trainset_dir", default="/home/dataset/sr291_21x21_dn/2x/", help="train data directory")
 parser.add_argument("--testset_tag", default="Set14B", help="train data directory")
@@ -40,7 +53,7 @@ parser.add_argument("--testset_dir", default="/home/dataset/set14_dnb/2x/", help
 #model
 parser.add_argument("--rgb_range", type=float, default=1.0, help="int/float images")
 parser.add_argument("--scale", type=int, default=2, help="scaling factor")
-parser.add_argument("--core", default="SMSR_normal", help="core model (template specified in sr_mask_core.py)")
+parser.add_argument("--core", default="EDSR", help="core model (template specified in sr_mask_core.py)")
 parser.add_argument("--checkpoint", default=None, help="checkpoint to load core from")
 
 #eval

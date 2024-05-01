@@ -15,7 +15,7 @@ import evaluation
 import loss
 import model as supernet
 from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import StepLR
 import utils
 from option import parser
 from template import train_template as template
@@ -43,8 +43,9 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    core.load_state_dict(torch.load(args.weight), strict=False)
+    core.load_state_dict(torch.load(args.weight))
     print(f"[INFO] Load weight from {args.weight}")
+    
 core.cuda()
 
 # initialization
@@ -53,11 +54,12 @@ batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
-lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+# lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+lr_scheduler = StepLR(optimizer, step_size=args.epoch_step, gamma=0.1)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-out_dir = os.path.join(args.cv_dir, name+f'_nblock{args.nblocks}')
+out_dir = os.path.join(args.cv_dir, name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}')
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
     
@@ -196,11 +198,21 @@ def train():
             
             perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
             
-            train_loss = loss_esu(outs_mean, masks, yt)
+            train_loss = 0.0
+            if args.train_stage==0:
+                train_loss = loss_func(outs_mean[-1], yt)
+            elif args.train_stage==1:
+                core.freeze_backbone()
+                train_loss = loss_esu(outs_mean, masks, yt)
+            else:
+                core.freeze_backbone()
+                train_loss = loss_esu(outs_mean, masks, yt)
+            
             
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
+            lr_scheduler.step()
 
             total_loss += train_loss.item() if torch.is_tensor(train_loss) else train_loss
             

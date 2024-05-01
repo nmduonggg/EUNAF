@@ -1,5 +1,7 @@
 from .SuperNet_separate import SuperNet_separate
 from .SuperNet_UDL import SuperNet_udl
+from .SuperNet_SMSR import SuperNet_SMSR
+from .EDSR import EUNAF_EDSR
 
 def config(args):
     arch = args.core.split("-")
@@ -9,5 +11,10 @@ def config(args):
         return SuperNet_udl(args.scale, args.input_channel, args.nblocks)
     elif name=='SuperNet_separate':
         return SuperNet_separate(args.scale, args.input_channel, args.nblocks)
+    elif name=='SuperNet_SMSR':
+        return SuperNet_SMSR(args.scale, args.input_channel, args.nblocks)
+    elif name=='EUNAF_EDSR':
+        return EUNAF_EDSR(args)
+    
     else:
         assert(0), 'No configuration found'
