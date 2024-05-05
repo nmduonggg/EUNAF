@@ -20,7 +20,8 @@ parser.add_argument("--nblocks", type=int, default=1, help="Number of blocks to 
 parser.add_argument("--N", type=int, default=-1, help='Number of test instances, only used in testing')
 
 parser.add_argument("--train_stage", type=int, default=0, choices=(0, 1, 2), help="Choose training stage for pretrain backbone, eunaf, align stages")
-# Model specifications
+
+# Model specifications - EDSR
 parser.add_argument('--act', type=str, default='relu',help='activation function')
 parser.add_argument('--pre_train', type=str, default='',help='pre-trained model directory')
 parser.add_argument('--extend', type=str, default='.',help='pre-trained model directory')
@@ -31,6 +32,9 @@ parser.add_argument('--shift_mean', default=True,help='subtract pixel mean from 
 parser.add_argument('--dilation', action='store_true',help='use dilated convolution')
 parser.add_argument('--precision', type=str, default='single',choices=('single', 'half'),help='FP precision for test (single | half)')
 parser.add_argument('--input_channel', type=int, default=3, help='number of color channels')
+
+# RCAN
+parser.add_argument('--n_resgroups', type=int, default=-1, help='number of residual groups in RCAN structures')
 
 # test
 parser.add_argument("--visualize", action='store_true')

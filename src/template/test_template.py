@@ -36,18 +36,14 @@ def set_template(args):
         args.scale=2
         args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
-    elif  args.template == 'EUNAF_EDSRx2':
+    elif  args.template == 'EUNAF_RCANx2':
         print('[INFO] Template found (Separate SR)')
         args.style='RGB'
-        args.rgb_range=255.0
+        args.rgb_range=1.0
         args.input_channel=3
-        args.core='EUNAF_EDSR'
-        args.n_resblocks=32
-        args.n_feats=256
-        args.input_channel=3
-        args.res_scale=0.1
+        args.core='EUNAF_RCAN'
         args.scale=2
-        args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/EDSR/edsr_x2-0edfb8a3.pt"
+        args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
     else:
         print('[ERRO] Template not found')

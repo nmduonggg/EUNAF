@@ -109,13 +109,32 @@ def set_template(args):
         print(vars(args))
     elif  args.template == 'EUNAF_EDSRx2_bl':
         print('[INFO] Template found (SMSR SR)')
-        args.lr=1e-6
         args.lr_decay_ratio=0.5
         args.weight_decay=0
         args.batch_size=16
-        args.epoch_step=100
-        args.val_each=2
-        args.max_epochs=1000
+        args.epoch_step=30
+        args.val_each=1
+        args.loss='L1'
+        args.style='RGB'
+        args.trainset_tag='DIV2K'
+        args.trainset_patch_size=48
+        args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
+        args.rgb_range=1.0
+        args.scale=2
+        args.core='EUNAF_EDSR'
+        args.n_feats=64
+        args.input_channel=3
+        args.res_scale=1.0
+        args.trainset_preload=0
+        print(vars(args))
+    elif  args.template == 'EUNAF_RCANx2':
+        print('[INFO] Template found (EUNAF RCAN SR)')
+        args.lr_decay_ratio=0.5
+        args.weight_decay=0
+        args.batch_size=128
+        args.epoch_step=30
+        args.val_each=1
+        args.max_epochs=300
         args.loss='L1'
         args.style='RGB'
         args.trainset_tag='DIV2K'
@@ -125,36 +144,12 @@ def set_template(args):
         args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
         args.rgb_range=1.0
         args.scale=2
-        args.core='EUNAF_EDSR'
+        args.core='EUNAF_RCAN'
+        args.reduction=16
         args.n_feats=64
         args.input_channel=3
         args.res_scale=1.0
-        args.weight='/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_x2_nb4_nf64_st0/_best.t7'
-        print(vars(args))
-    elif  args.template == 'EUNAF_EDSRx2':
-        print('[INFO] Template found (EUNAF_EDSR SR)')
-        args.lr=1e-4
-        args.lr_decay_ratio=0.5
-        args.weight_decay=0
-        args.batch_size=16
-        args.epoch_step=100
-        args.val_each=2
-        args.max_epochs=300
-        args.loss='L1'
-        args.style='RGB'
-        args.trainset_tag='DIV2K'
-        args.trainset_patch_size=96
-        args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
-        args.testset_tag='DIV2K-valid'
-        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
-        args.rgb_range=255.0
-        args.scale=2
-        args.core='EUNAF_EDSR'
-        args.n_resblocks=32
-        args.n_feats=256
-        args.input_channel=3
-        args.res_scale=0.1
-        args.weight='/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/EDSR/edsr_x2-0edfb8a3.pt'
+        args.trainset_preload=0
         print(vars(args))
     else:
         print('[ERRO] Template not found')

@@ -1,5 +1,5 @@
 """
-This training process is inspired from KULNet and Beyesian MC dropout
+Train EUNAF-version of backbone SISR network
 """
 
 import os
@@ -15,7 +15,7 @@ import evaluation
 import loss
 import model as supernet
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
 import utils
 from option import parser
 from template import train_template as template
@@ -43,7 +43,7 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    core.load_state_dict(torch.load(args.weight))
+    core.load_state_dict(torch.load(args.weight), strict=False)
     print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
@@ -54,14 +54,16 @@ batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
-# lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
-lr_scheduler = StepLR(optimizer, step_size=args.epoch_step, gamma=0.1)
+lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+# lr_scheduler = StepLR(optimizer, step_size=args.epoch_step, gamma=0.5)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-out_dir = os.path.join(args.cv_dir, name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}')
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
+fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
+    else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
+out_dir = os.path.join(args.cv_dir, fname)
+os.makedirs(out_dir, exist_ok=True)
+print("Load ckpoint to: ", out_dir)
     
 def get_error_btw_F(yfs):
     error_track = []
@@ -80,26 +82,56 @@ def get_error_btw_F(yfs):
     
     return error_track
 
-def loss_esu(yfs, masks, yt):
+def loss_esu(yfs, masks, yt, freeze_mask=False):
     assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
     esu = 0.0
     # mean_mask = torch.mean(torch.cat(masks, dim=0), dim=0)
     # yt = yt.repeat(mean_yf.shape[0], 1, 1, 1)
     ori_yt = yt.clone()
+    all_masks = torch.exp(torch.stack(masks, dim=0)).clone().detach()
+    pmin = torch.amin(all_masks, dim=0)
+    pmax = torch.amax(all_masks, dim=0)
+    
     for i in range(len(yfs)):
         
         yf = yfs[i]
-        s = torch.exp(-masks[i])
+        if freeze_mask:
+            mask_ = masks[i].clone().detach()
+            mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
+        else:
+            mask_ = masks[i]
+        s = torch.exp(-mask_)
         yf = torch.mul(yf, s)
         yt = torch.mul(ori_yt, s)
         l1_loss = loss_func(yf, yt)
-        esu = esu + 2*masks[i].mean()
+        esu = esu + 2*mask_.mean()
         
         l1_loss = loss_func(yf, yt)
         
         esu = esu + l1_loss
         
     return esu
+
+def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
+    
+    if not trainable_mask: 
+        all_masks = torch.stack(masks, dim=-1) # BxCxHxWxN
+        all_masks = all_masks.clone().detach()
+        raw_indices = torch.argmin(all_masks, dim=-1)    # BxCxHxW
+        onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # Bx1xHxWx4
+    else:
+        all_masks = -torch.stack(masks, dim=-1)
+        onehot_indices = gumbel_softmax(all_masks, dim=-1, tau=1e-8)   # Bx1xHxWx4
+        
+    fused_out = torch.zeros_like(yfs[0])
+    for i, yf in enumerate(yfs):
+        onehot = onehot_indices[..., i] # Bx1xHxWxN -> Bx1xHxW
+        yf = yf * onehot
+        fused_out = fused_out + yf
+    
+    aln_loss = loss_func(fused_out, yt)
+    
+    return aln_loss, fused_out
 
 def rescale_masks(masks):
     new_masks = []
@@ -119,14 +151,16 @@ def train():
     if args.wandb:
         wandb.login(key="60fd0a73c2aefc531fa6a3ad0d689e3a4507f51c")
         wandb.init(
-            project='SuperNet',
+            project='EUNAF',
             group=f'x{args.scale}_FINAL',
-            name=name+f'_nblock{args.nblocks}', 
+            name=fname, 
             entity='nmduonggg',
             config=vars(args)
         )
     
     best_perf = -1e9 # psnr
+    if args.train_stage > 0:
+        core.freeze_backbone()
     
     for epoch in range(epochs):
         track_dict = {}
@@ -134,6 +168,7 @@ def train():
         if epoch % args.val_each == 0:
             perfs_val = [0 for _ in range(args.n_resblocks)]
             total_val_loss = 0.0
+            perf_fused = 0.0
             uncertainty = [0 for _ in range(args.n_resblocks)]
             #walk through the test set
             core.eval()
@@ -145,12 +180,20 @@ def train():
                 yt = yt.cuda()
 
                 with torch.no_grad():
-                    out = core(x)
+                    out = core.eunaf_forward(x)
                 
                 outs_mean, masks = out
                 perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
                 
-                val_loss = loss_esu(outs_mean, masks, yt)
+                if args.train_stage==0:
+                    val_loss = loss_func(outs_mean[-1], yt)
+                elif args.train_stage==1:
+                    val_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
+                elif args.train_stage==2:
+                    align_biases = core.align_biases
+                    val_loss, val_fused = loss_alignment(outs_mean, masks, yt, align_biases, trainable_mask=False)
+                    perf_fused += evaluation.calculate(args, val_fused, yt)
+                    
                 total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
                 
                 for i, p in enumerate(perf_layers_mean):
@@ -158,7 +201,8 @@ def train():
                     uncertainty[i] += masks[i].cpu().detach().mean().item()
 
             perfs_val = [p / len(XYtest) for p in perfs_val]
-            print(perfs_val)
+            perf_fused /= len(XYtest)
+            print(perfs_val, perf_fused)
             uncertainty = [u / len(XYtest) for u in uncertainty]
             total_val_loss /= len(XYtest)
 
@@ -172,11 +216,25 @@ def train():
             print(log_str)
             # torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
             
-            if perfs_val[-1] > best_perf:
-                
-                best_perf = perfs_val[-1]
-                torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+            if args.train_stage==0:
+                if perfs_val[-1] > best_perf:
+                    
+                    best_perf = perfs_val[-1]
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+            elif args.train_stage==1:
+                if torch.tensor(perfs_val).mean() > best_perf:
+                    
+                    best_perf = torch.tensor(perfs_val).mean()
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+                    
+            elif args.train_stage==2:
+                if perf_fused > best_perf:
+                    best_perf = perf_fused
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+            
         
         # start training 
         
@@ -193,7 +251,7 @@ def train():
             train_loss = 0.0
             
             # inference
-            out = core(x)   # outs, density, mask
+            out = core.eunaf_forward(x)   # outs, density, mask
             outs_mean, masks = out
             
             perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
@@ -202,24 +260,22 @@ def train():
             if args.train_stage==0:
                 train_loss = loss_func(outs_mean[-1], yt)
             elif args.train_stage==1:
-                core.freeze_backbone()
-                train_loss = loss_esu(outs_mean, masks, yt)
+                train_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
             else:
-                core.freeze_backbone()
-                train_loss = loss_esu(outs_mean, masks, yt)
+                align_biases = core.align_biases
+                train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases, trainable_mask=False)
             
             
             optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
-            lr_scheduler.step()
 
             total_loss += train_loss.item() if torch.is_tensor(train_loss) else train_loss
             
             for i, p in enumerate(perf_layers_mean):
                 perfs[i] = perfs[i] + p
                 uncertainty[i] = uncertainty[i] + (masks[i]).detach().cpu().mean()
-
+        lr_scheduler.step()
         total_loss /= len(XYtrain)
         perfs = [p / len(XYtrain) for p in perfs]
         uncertainty = [u / len(XYtrain) for u in uncertainty]

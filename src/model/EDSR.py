@@ -66,47 +66,52 @@ class EDSR(nn.Module):
 
         return x 
 
-    # def load_state_dict(self, state_dict, strict=True):
-    #     own_state = self.state_dict()
-    #     for name, param in state_dict.items():
-    #         if name in own_state:
-    #             if isinstance(param, nn.Parameter):
-    #                 param = param.data
-    #             try:
-    #                 own_state[name].copy_(param)
-    #             except Exception:
-    #                 if name.find('tail') == -1:
-    #                     raise RuntimeError('While copying the parameter named {}, '
-    #                                        'whose dimensions in the model are {} and '
-    #                                        'whose dimensions in the checkpoint are {}.'
-    #                                        .format(name, own_state[name].size(), param.size()))
-    #         elif strict:
-    #             if name.find('tail') == -1:
-    #                 raise KeyError('unexpected key "{}" in state_dict'
-    #                                .format(name))
+    def load_state_dict(self, state_dict, strict=True):
+        own_state = self.state_dict()
+        for name, param in state_dict.items():
+            if name in own_state:
+                if isinstance(param, nn.Parameter):
+                    param = param.data
+                try:
+                    own_state[name].copy_(param)
+                except Exception:
+                    if name.find('tail') == -1:
+                        print('While copying the parameter named {}, '
+                                           'whose dimensions in the model are {} and '
+                                           'whose dimensions in the checkpoint are {}.'
+                                           .format(name, own_state[name].size(), param.size()))
+                        print(f'Skip load state dict for {name}')
+            elif strict:
+                if name.find('tail') == -1:
+                    raise KeyError('unexpected key "{}" in state_dict'
+                                   .format(name))
                 
 
 class EUNAF_EDSR(EDSR):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_EDSR, self).__init__(args, conv=conv)
-        self.predictors = self.init_intermediate_out(self.n_resblocks - 1, conv)
-        self.estimators = self.init_intermediate_out(self.n_resblocks, conv)
+        self.predictors = self.init_intermediate_out(self.n_resblocks - 1, conv, out_channels=args.input_channel)
+        self.estimators = self.init_intermediate_out(self.n_resblocks, conv, out_channels=args.input_channel, last_act=False)
+        self.align_biases = nn.ParameterList()
+        for _ in range(args.n_resblocks-1):
+            self.align_biases.append(nn.Parameter(torch.zeros([args.input_channel, 1, 1])))
         
-    def init_intermediate_out(self, num_blocks, conv):
+    def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
         
         interm_predictors = nn.ModuleList()
         for _ in range(num_blocks):
             m_tail = [
                 common.Upsampler(conv, self.scale, self.n_feats, act=False),
-                conv(self.n_feats, self.input_channel, self.kernel_size)
+                conv(self.n_feats, out_channels, self.kernel_size)
             ]
+            if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
             
         return interm_predictors
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n:
+            if 'predictors' not in n and 'estimators' not in n and 'align_biases' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")
