@@ -90,11 +90,12 @@ class EDSR(nn.Module):
 class EUNAF_EDSR(EDSR):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_EDSR, self).__init__(args, conv=conv)
-        self.predictors = self.init_intermediate_out(self.n_resblocks // 2 - 1, conv, out_channels=args.input_channel)
-        self.estimators = self.init_intermediate_out(self.n_resblocks//2, conv, out_channels=args.input_channel, last_act=False)
-        self.align_biases = nn.ParameterList()
-        for _ in range(args.n_resblocks-1):
-            self.align_biases.append(nn.Parameter(torch.zeros([args.input_channel, 1, 1])))
+        self.n_estimators = min(args.n_estimators, self.n_resblocks // 2)
+        self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+            
+    def get_n_estimators(self):
+        return self.n_estimators
         
     def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
         
@@ -120,15 +121,15 @@ class EUNAF_EDSR(EDSR):
         x = self.sub_mean(x)
         x = self.head(x)
 
-        for i in range(self.n_resblocks):
+        for i in range(self.n_estimators):
             res = self.body[i](x) if i==0 else self.body[i](res)
         res += x
 
         x = self.tail(res)
         x = self.add_mean(x)
         
-        outs = [torch.zeros_like(x) for _ in range(self.n_resblocks-1)] + [x]
-        masks = [torch.zeros_like(x) for _ in range(self.n_resblocks)]
+        outs = [torch.zeros_like(x) for _ in range(self.n_estimators - 1)] + [x]
+        masks = [torch.zeros_like(x) for _ in range(self.n_estimators)]
         
         return outs, masks
     
@@ -151,14 +152,14 @@ class EUNAF_EDSR(EDSR):
                 outs.append(out)
                 
             else:
-                if i > self.n_resblocks // 2 - 1:
+                if i > (self.n_resblocks - self.n_estimators) - 1:
                     tmp_x = (x + shortcut).clone().detach()
-                    tmp_x = self.predictors[i- (self.n_resblocks//2)](tmp_x) 
+                    tmp_x = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_x) 
                     out = self.add_mean(tmp_x) 
                     outs.append(out)
-                elif i==self.n_resblocks // 2 - 1:  # last block before intermediate predictors
-                    for i in range(self.n_resblocks // 2): 
-                        mask = self.estimators[i-self.n_resblocks//2](x.clone().detach())
+                elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
+                    for j in range(self.n_estimators): 
+                        mask = self.estimators[j](x.clone().detach())
                         mask = self.add_mean(mask)
                         masks.append(mask)  
                     

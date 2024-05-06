@@ -18,6 +18,7 @@ parser.add_argument("--weight", help='Weight path')
 # SuperNet hyper-parameters
 parser.add_argument("--nblocks", type=int, default=1, help="Number of blocks to be used")
 parser.add_argument("--N", type=int, default=-1, help='Number of test instances, only used in testing')
+parser.add_argument("--n_estimators", type=int, default=4, help="Number of intermediate uncertainty estimators")
 
 parser.add_argument("--train_stage", type=int, default=0, choices=(0, 1, 2), help="Choose training stage for pretrain backbone, eunaf, align stages")
 

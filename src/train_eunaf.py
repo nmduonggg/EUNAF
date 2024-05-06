@@ -53,11 +53,11 @@ lr = args.lr
 batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
 num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
-num_blocks = num_blocks // 2
+num_blocks = min(num_blocks // 2, args.n_estimators)
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
-# lr_scheduler = StepLR(optimizer, step_size=args.epoch_step, gamma=0.5)
+early_stopper = utils.EarlyStopper(patience=25)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
@@ -245,9 +245,10 @@ def train():
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                     print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
             
+            if early_stopper.early_stop(total_val_loss):
+                break
         
         # start training 
-        
         total_loss = 0.0
         perfs = [0 for _ in range(num_blocks)]
         uncertainty = [0 for _ in range(num_blocks)]
