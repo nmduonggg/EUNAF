@@ -145,15 +145,15 @@ class EUNAF_RCAN(RCAN):
         x = self.sub_mean(x)
         x = self.head(x)
 
-        for i in range(self.n_resblocks):
+        for i in range(self.n_groups):
             res = self.body[i](x) if i==0 else self.body[i](res)
         res += x
 
         x = self.tail(res)
         x = self.add_mean(x)
         
-        outs = [torch.zeros_like(x) for _ in range(self.n_resblocks-1)] + [x]
-        masks = [torch.zeros_like(x) for _ in range(self.n_resblocks)]
+        outs = [torch.zeros_like(x) for _ in range(self.n_resgroups-1)] + [x]
+        masks = [torch.zeros_like(x) for _ in range(self.n_resgroups)]
         
         return outs, masks
     
@@ -166,15 +166,15 @@ class EUNAF_RCAN(RCAN):
         outs = list() 
         masks = list()
         
-        for i in range(self.n_resblocks): 
+        for i in range(self.n_resgroups): 
             mask = self.estimators[i](x.clone().detach())
             mask = self.add_mean(mask)
             masks.append(mask)  
             
-        for i in range(self.n_resblocks):
+        for i in range(self.n_resgroups):
             x = self.body[i](x) 
             
-            if i==self.n_resblocks-1:
+            if i==self.n_resgroups-1:
                 x += shortcut
                 x = self.tail(x) 
                 out = self.add_mean(x)

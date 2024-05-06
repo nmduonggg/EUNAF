@@ -3,7 +3,7 @@ python train_eunaf.py \
     --N 14 \
     --scale 2 \
     --train_stage 0 \
-    --n_resblocks 10 \
+    --n_resblocks 2 \
     --max_epochs 1000 \
     --lr 0.0001 \
     --testset_tag='DIV2K-valid' \

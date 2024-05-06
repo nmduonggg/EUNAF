@@ -79,9 +79,9 @@ def set_template(args):
         args.style='RGB'
         args.trainset_tag='DIV2K'
         args.trainset_patch_size=21
-        args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
+        args.trainset_dir='../../data/DIV2K/'
         args.testset_tag='DIV2K-valid'
-        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K'
+        args.testset_dir='../../data/DIV2K'
         args.rgb_range=1.0
         args.core='SuperNet_udl'
         args.input_channel=3 
@@ -118,30 +118,27 @@ def set_template(args):
         args.style='RGB'
         args.trainset_tag='DIV2K'
         args.trainset_patch_size=48
-        args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
+        args.trainset_dir='../../data/DIV2K/'
         args.rgb_range=1.0
         args.scale=2
         args.core='EUNAF_EDSR'
         args.n_feats=64
         args.input_channel=3
         args.res_scale=1.0
-        args.trainset_preload=0
         print(vars(args))
     elif  args.template == 'EUNAF_RCANx2':
         print('[INFO] Template found (EUNAF RCAN SR)')
         args.lr_decay_ratio=0.5
         args.weight_decay=0
-        args.batch_size=128
+        args.batch_size=16
         args.epoch_step=30
         args.val_each=1
-        args.max_epochs=300
+        args.max_epochs=1000
         args.loss='L1'
         args.style='RGB'
         args.trainset_tag='DIV2K'
         args.trainset_patch_size=48
-        args.trainset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
-        args.testset_tag='DIV2K-valid'
-        args.testset_dir='/mnt/disk1/nmduong/FusionNet/data/DIV2K/'
+        args.trainset_dir='../../data/DIV2K/'
         args.rgb_range=1.0
         args.scale=2
         args.core='EUNAF_RCAN'
@@ -149,7 +146,6 @@ def set_template(args):
         args.n_feats=64
         args.input_channel=3
         args.res_scale=1.0
-        args.trainset_preload=0
         print(vars(args))
     else:
         print('[ERRO] Template not found')

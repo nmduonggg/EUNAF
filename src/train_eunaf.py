@@ -28,7 +28,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=8)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -36,7 +36,7 @@ print('[INFO] trainset contains %d samples' % (n_sample))
 # load test data
 print('[INFO] load testset "%s" from %s' % (args.testset_tag, args.testset_dir))
 testset, batch_size_test = data.load_testset(args)
-XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=8)
+XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0)
 
 # model
 arch = args.core.split("-")
@@ -52,6 +52,8 @@ core.cuda()
 lr = args.lr
 batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
+num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
+num_blocks = num_blocks // 2
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
@@ -93,7 +95,6 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
     pmax = torch.amax(all_masks, dim=0)
     
     for i in range(len(yfs)):
-        
         yf = yfs[i]
         if freeze_mask:
             mask_ = masks[i].clone().detach()
@@ -114,14 +115,22 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
     
-    if not trainable_mask: 
-        all_masks = torch.stack(masks, dim=-1) # BxCxHxWxN
-        all_masks = all_masks.clone().detach()
-        raw_indices = torch.argmin(all_masks, dim=-1)    # BxCxHxW
-        onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # Bx1xHxWx4
-    else:
-        all_masks = -torch.stack(masks, dim=-1)
-        onehot_indices = gumbel_softmax(all_masks, dim=-1, tau=1e-8)   # Bx1xHxWx4
+    final_mask = masks[-1].clone().detach() 
+    pmin = torch.amin(final_mask, dim=[2,3], keepdim=True)
+    pmax = torch.amax(final_mask, dim=[2,3], keepdim=True)
+    final_mask = (final_mask - pmin) / (pmax - pmin+ 1e-9)
+    aln_loss_2 = 0.0
+    for i, yf in enumerate(yfs):
+        if i==len(yfs)-1: continue
+        yf_ = yf * final_mask
+        yt_ = yt * final_mask 
+        aln_loss_2 += loss_func(yf_, yt_)
+    aln_loss_2 / (len(yfs)-1)
+    
+    all_masks = torch.stack(masks, dim=-1) # BxCxHxWxN
+    all_masks = all_masks.clone().detach()
+    raw_indices = torch.argmin(all_masks, dim=-1)    # BxCxHxW
+    onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # Bx1xHxWx4
         
     fused_out = torch.zeros_like(yfs[0])
     for i, yf in enumerate(yfs):
@@ -129,6 +138,7 @@ def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
         yf = yf * onehot
         fused_out = fused_out + yf
     
+    # aln_loss = loss_func(fused_out, yt) + aln_loss_2*0.5
     aln_loss = loss_func(fused_out, yt)
     
     return aln_loss, fused_out
@@ -166,10 +176,10 @@ def train():
         track_dict = {}
         
         if epoch % args.val_each == 0:
-            perfs_val = [0 for _ in range(args.n_resblocks)]
+            perfs_val = [0 for _ in range(num_blocks)]
             total_val_loss = 0.0
             perf_fused = 0.0
-            uncertainty = [0 for _ in range(args.n_resblocks)]
+            uncertainty = [0 for _ in range(num_blocks)]
             #walk through the test set
             core.eval()
             for m in core.modules():
@@ -239,8 +249,8 @@ def train():
         # start training 
         
         total_loss = 0.0
-        perfs = [0 for _ in range(args.n_resblocks)]
-        uncertainty = [0 for _ in range(args.n_resblocks)]
+        perfs = [0 for _ in range(num_blocks)]
+        uncertainty = [0 for _ in range(num_blocks)]
         
         core.train()
         for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtrain), total=len(XYtrain)):
