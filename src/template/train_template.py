@@ -145,7 +145,7 @@ def set_template(args):
         args.input_channel=3
         args.res_scale=1.0
         print(vars(args))
-    elif  args.template == 'EUNAF_RCANx2':
+    elif  args.template == 'EUNAF_RCANxN':
         print('[INFO] Template found (EUNAF RCAN SR)')
         args.lr_decay_ratio=0.5
         args.weight_decay=0
@@ -159,7 +159,6 @@ def set_template(args):
         args.trainset_patch_size=48
         args.trainset_dir='../../data/DIV2K/'
         args.rgb_range=1.0
-        args.scale=2
         args.core='EUNAF_RCAN'
         args.n_resgroups = 10
         args.n_resblocks = 4

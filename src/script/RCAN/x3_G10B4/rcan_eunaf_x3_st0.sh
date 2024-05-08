@@ -1,5 +1,5 @@
 python train_eunaf.py \
-    --template EUNAF_RCANx3 \
+    --template EUNAF_RCANxN \
     --N 14 \
     --scale 3 \
     --train_stage 0 \
