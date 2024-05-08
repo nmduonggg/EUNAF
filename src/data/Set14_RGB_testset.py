@@ -3,10 +3,10 @@ from torch.utils.data import Dataset
 from .common import load_image_as_Tensor
 
 class Set14_RGB_testset(Dataset):
-    def __init__(self, root, scale=2, style='RGB', rgb_range=1.0):
+    def __init__(self, root, scale=2, style='RGB', rgb_range=1.0, N=14):
         super(Set14_RGB_testset, self).__init__()
 
-        self.N_raw_image = 14 #801-900
+        self.N_raw_image = N #801-900
         self.N = self.N_raw_image
 
         self.X, self.Y = [], []

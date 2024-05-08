@@ -52,13 +52,12 @@ print('Load to: ', out_dir)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
     
+num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
+num_blocks = min(args.n_estimators, num_blocks)
 
 psnr_map = np.zeros((len(XYtest), num_blocks))
 ssim_map = np.zeros((len(XYtest), num_blocks))
 unc_map = np.zeros((len(XYtest), num_blocks))
-
-num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
-num_blocks = min(args.n_estimators, num_blocks)
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -67,8 +66,6 @@ def test():
     
     core.eval()
     # core.train()
-    
-    percent_total = np.zeros(shape=[num_blocks])
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         x  = x.cuda()
         yt = yt.cuda()
@@ -76,19 +73,18 @@ def test():
             out = core.eunaf_forward(x)
         
         yfs, masks = out
-        percent_total += percent
         perf_v_layers = [evaluation.calculate_all(args, yf, yt) for yf in yfs]
         
         psnr_v_layers, ssim_v_layers = list(), list()
         for i, v in enumerate(perf_v_layers):
-            psnr_v_layers.append(v[0])
-            ssim_v_layers.append(v[1])
+            psnr_v_layers.append(v[0].item())
+            ssim_v_layers.append(v[1].item())
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         
         # store value
-        psnr_map[batch_idx] = np.array(psnr_v_layers)
-        ssim_map[batch_idx] = np.array(ssim_v_layers) 
-        unc_map[batch_idx] = np.array(unc_v_layers)   
+        psnr_map[batch_idx, :] = np.array(psnr_v_layers).reshape(1, -1)
+        ssim_map[batch_idx, :] = np.array(ssim_v_layers).reshape(1, -1)
+        unc_map[batch_idx, :] = np.array(unc_v_layers).reshape(1, -1)
             
         for i, p in enumerate(psnr_v_layers):
             psnrs_val[i] = psnrs_val[i] + p
@@ -104,14 +100,9 @@ def test():
 
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
     ssims_val = [p / len(XYtest) for p in ssims_val]
-    percent_total = percent_total / len(XYtest)
     
     print(*psnrs_val)
     print(*ssims_val)
-    
-    percent_total = percent_total.tolist()
-    for perc in percent_total:
-        print( f"{(perc*100):.3f}", end=' ')
     
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
 

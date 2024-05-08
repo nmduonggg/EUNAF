@@ -59,7 +59,7 @@ def load_testset(args):
     elif tag=='Set14RGB' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
-        return Set14_RGB_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test     
+        return Set14_RGB_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range, N=args.N), batch_size_test     
     elif tag=='Set5RGB' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
