@@ -4,6 +4,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def initialize_weights(net_l, scale=1):
+    if not isinstance(net_l, list):
+        net_l = [net_l]
+    for net in net_l:
+        for m in net.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+                m.weight.data *= scale  # for residual block
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                init.kaiming_normal_(m.weight, a=0, mode='fan_in')
+                m.weight.data *= scale
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias.data, 0.0)
+
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
     return nn.Conv2d(
         in_channels, out_channels, kernel_size,
@@ -71,6 +90,8 @@ class Upsampler(nn.Sequential):
                     m.append(nn.ReLU(True))
                 elif act == 'prelu':
                     m.append(nn.PReLU(n_feats))
+                elif act == 'lrelu':
+                    m.append(nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
         elif scale == 3:
             m.append(conv(n_feats, 9 * n_feats, 3, bias))
@@ -81,6 +102,8 @@ class Upsampler(nn.Sequential):
                 m.append(nn.ReLU(True))
             elif act == 'prelu':
                 m.append(nn.PReLU(n_feats))
+            elif act == 'lrelu':
+                m.append(nn.LeakyReLU(negative_slope=0.1, inplace=True))
         else:
             raise NotImplementedError
 

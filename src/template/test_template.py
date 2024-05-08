@@ -36,6 +36,15 @@ def set_template(args):
         args.scale=2
         args.weight = "./checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
+    elif  args.template == 'EUNAF_EDSRx3_bl':
+        print('[INFO] Template found (Separate SR)')
+        args.style='RGB'
+        args.rgb_range=1.0
+        args.input_channel=3
+        args.core='EUNAF_EDSR'
+        args.scale=3
+        args.weight = "./checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
+        print(vars(args))
     elif  args.template == 'EUNAF_RCANx2':
         print('[INFO] Template found (Separate SR)')
         args.style='RGB'
