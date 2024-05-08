@@ -200,8 +200,8 @@ def train():
                 elif args.train_stage==1:
                     val_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
                 elif args.train_stage==2:
-                    align_biases = core.align_biases
-                    val_loss, val_fused = loss_alignment(outs_mean, masks, yt, align_biases, trainable_mask=False)
+                    # align_biases = core.align_biases
+                    val_loss, val_fused = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
                     perf_fused += evaluation.calculate(args, val_fused, yt)
                     
                 total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
@@ -273,8 +273,8 @@ def train():
             elif args.train_stage==1:
                 train_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
             else:
-                align_biases = core.align_biases
-                train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases, trainable_mask=False)
+                # align_biases = core.align_biases
+                train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
             
             
             optimizer.zero_grad()

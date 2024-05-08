@@ -40,7 +40,7 @@ if args.weight:
     out_dir = os.path.join(args.cv_dir, fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=True)
+    core.load_state_dict(torch.load(args.weight), strict=False)
 core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
@@ -145,7 +145,7 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
     
     # masks_np = process_unc_map(masks, False, False, False)
     # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
-    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=True)
+    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=True, abs=True)
     if im:
         masks_np_percentile = process_unc_map(masks, to_heatmap=False, abs=False, rescale=False)
     
@@ -193,8 +193,8 @@ def visualize_histogram_im(masks, id):
                             tight_layout=True, figsize=(60, 20))
     lim = max([max(val) for val in vals])
     for i, val in enumerate(vals):
-        axs[i].hist(val, 255, edgecolor='black')
-        axs[i].set_xlim(0, 255)
+        axs[i].hist(val, 100, edgecolor='black')
+        axs[i].set_xlim(0, 100)
         axs[i].set_title(f'block {i} - mean {val.mean()} - std {np.std(val)}')
         
     plt.savefig(save_file)
@@ -382,7 +382,7 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
         if visualize:
             fout_ = np.clip(fout*cur_mask, 0, 1)
             axs[i].imshow(fout_)
-            axs[i].set_title(f"p={p*100:.2f}%|b={i}|acc={perfs[i]:.4f}")
+            axs[i].set_title(f"p={p*100:.2f}%|b={i}|acc={round(perfs[i].item(), 4)}")
             
             plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
     if visualize:
@@ -399,20 +399,22 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
 t = 5e-3
 psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
+num_blocks = min(args.n_estimators, num_blocks)
 
 def test():
-    perfs_val = [0 for _ in range(num_blocks)]
+    psnrs_val = [0 for _ in range(num_blocks)]
+    ssims_val = [0 for _ in range(num_blocks)]
     uncertainty_val = [0 for _ in range(num_blocks)]
     total_val_loss = 0.0
     total_mask_loss = 0.0
-    perf_fuse = 0.0
+    psnr_fuse, ssim_fuse = 0.0, 0.0
     #walk through the test set
     core.eval()
     # core.train()
     for m in core.modules():
         if hasattr(m, '_prepare'):
             m._prepare()
-    align_biases = core.align_biases
+    # align_biases = core.align_biases
     percent_total = np.zeros(shape=[num_blocks])
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         x  = x.cuda()
@@ -423,12 +425,13 @@ def test():
             # out = core(x)
         
         yfs, masks = out
-        yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx, align_biases)
+        yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
         yf_fuse = yf_fuse.cuda()
         
         percent_total += percent
-        cur_perf_fuse = evaluation.calculate(args, yf_fuse, yt)
-        perf_fuse += cur_perf_fuse
+        cur_psnr_fuse, cur_ssim_fuse = evaluation.calculate_all(args, yf_fuse, yt)
+        psnr_fuse += cur_psnr_fuse
+        ssim_fuse += cur_ssim_fuse
         
         if args.visualize:
             visualize_histogram_im(masks, batch_idx)
@@ -438,23 +441,26 @@ def test():
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / num_blocks
             
-        perf_v_layers = [evaluation.calculate(args, yf, yt) for yf in yfs]
+        perf_v_layers = [evaluation.calculate_all(args, yf, yt) for yf in yfs]
+        
+        psnr_v_layers, ssim_v_layers = list(), list()
+        for i, v in enumerate(perf_v_layers):
+            psnr_v_layers.append(v[0])
+            ssim_v_layers.append(v[1])
+        
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        visualize_fusion_map(yfs, masks, batch_idx, perfs=perf_v_layers+[cur_perf_fuse], visualize=True)
-        
-        # psnr_unc_map[batch_idx, :] = np.array([x for x in zip(perf_v_layers, error_v_layers, unc_v_layers)]).reshape(-1)
+        visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         
         if args.visualize:
             visualize_unc_map(
                 [m[:, :1, ...] for m in masks], 
                 batch_idx, perf_v_layers)
-            # visualize_unc_map_binary(masks, batch_idx, perf_v_layers)
-            # visualize_unc_map(yfs, batch_idx, perf_v_layers, True)
             
-        for i, p in enumerate(perf_v_layers):
-            perfs_val[i] = perfs_val[i] + p
+        for i, p in enumerate(psnr_v_layers):
+            psnrs_val[i] = psnrs_val[i] + p
+            ssims_val[i] += ssim_v_layers[i]
             uncertainty_val[i] = uncertainty_val[i] + torch.exp(masks[i]).contiguous().cpu().mean()
         total_val_loss += val_loss
         
@@ -462,10 +468,14 @@ def test():
     # np_fn = os.path.join(out_dir, f'psn_unc_{args.testset_tag}.npy')
     # np.save(np_fn, psnr_unc_map)
 
-    perfs_val = [p / len(XYtest) for p in perfs_val]
+    psnrs_val = [p / len(XYtest) for p in psnrs_val]
+    ssims_val = [p / len(XYtest) for p in ssims_val]
     percent_total = percent_total / len(XYtest)
-    perf_fuse = perf_fuse / len(XYtest)
-    print(*perfs_val, perf_fuse)
+    psnr_fuse = psnr_fuse / len(XYtest)
+    ssim_fuse = ssim_fuse / len(XYtest)
+    
+    print(*psnrs_val, psnr_fuse)
+    print(*ssims_val, ssim_fuse)
     
     percent_total = percent_total.tolist()
     for perc in percent_total:

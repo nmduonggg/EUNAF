@@ -118,8 +118,12 @@ class RCAN(nn.Module):
 class EUNAF_RCAN(RCAN):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_RCAN, self).__init__(args, conv=conv) 
-        self.predictors = self.init_intermediate_out(self.n_resgroups - 1, conv, out_channels=args.input_channel)
-        self.estimators = self.init_intermediate_out(self.n_resgroups, conv, out_channels=args.input_channel, last_act=False)
+        self.n_estimators = min(args.n_estimators, self.n_resgroups//2)
+        self.predictors = self.init_intermediate_out(self.n_estimators - 1, conv, out_channels=args.input_channel)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+        
+    def get_n_estimators(self):
+        return self.n_estimators
         
     def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
         
@@ -136,7 +140,7 @@ class EUNAF_RCAN(RCAN):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n and 'align_biases' not in n:
+            if 'predictors' not in n and 'estimators' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")
@@ -165,11 +169,6 @@ class EUNAF_RCAN(RCAN):
         # enauf frame work start here
         outs = list() 
         masks = list()
-        
-        for i in range(self.n_resgroups): 
-            mask = self.estimators[i](x.clone().detach())
-            mask = self.add_mean(mask)
-            masks.append(mask)  
             
         for i in range(self.n_resgroups):
             x = self.body[i](x) 
@@ -181,9 +180,15 @@ class EUNAF_RCAN(RCAN):
                 outs.append(out)
                 
             else:
-                tmp_x = (x + shortcut).clone().detach()
-                tmp_x = self.predictors[i](tmp_x) 
-                out = self.add_mean(tmp_x) 
-                outs.append(out)
-                
+                if i > (self.n_resgroups - self.n_estimators) - 1:
+                    tmp_x = (x + shortcut).clone().detach()
+                    tmp_x = self.predictors[i - self.n_resgroups + self.n_estimators](tmp_x) 
+                    out = self.add_mean(tmp_x) 
+                    outs.append(out)
+                elif i== (self.n_resgroups - self.n_estimators) - 1:  # last block before intermediate predictors
+                    for j in range(self.n_estimators): 
+                        mask = self.estimators[j](x.clone().detach())
+                        mask = self.add_mean(mask)
+                        masks.append(mask)  
+                    
         return outs, masks

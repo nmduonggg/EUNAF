@@ -43,6 +43,10 @@ def set_template(args):
         args.input_channel=3
         args.core='EUNAF_RCAN'
         args.scale=2
+        args.n_resgroups = 10
+        args.n_resblocks = 4
+        args.reduction=16
+        args.n_feats=64
         args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
     else:

@@ -126,6 +126,25 @@ def set_template(args):
         args.input_channel=3
         args.res_scale=1.0
         print(vars(args))
+    elif  args.template == 'EUNAF_EDSRx3_bl':
+        print('[INFO] Template found (SMSR SR)')
+        args.lr_decay_ratio=0.5
+        args.weight_decay=0
+        args.batch_size=16
+        args.epoch_step=30
+        args.val_each=1
+        args.loss='L1'
+        args.style='RGB'
+        args.trainset_tag='DIV2K'
+        args.trainset_patch_size=48
+        args.trainset_dir='../../data/DIV2K/'
+        args.rgb_range=1.0
+        args.scale=3
+        args.core='EUNAF_EDSR'
+        args.n_feats=64
+        args.input_channel=3
+        args.res_scale=1.0
+        print(vars(args))
     elif  args.template == 'EUNAF_RCANx2':
         print('[INFO] Template found (EUNAF RCAN SR)')
         args.lr_decay_ratio=0.5
@@ -142,6 +161,8 @@ def set_template(args):
         args.rgb_range=1.0
         args.scale=2
         args.core='EUNAF_RCAN'
+        args.n_resgroups = 10
+        args.n_resblocks = 4
         args.reduction=16
         args.n_feats=64
         args.input_channel=3
