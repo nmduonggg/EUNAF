@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import init
 
 def initialize_weights(net_l, scale=1):
     if not isinstance(net_l, list):

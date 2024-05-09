@@ -24,7 +24,7 @@ class ResidualBlock_noBN(nn.Module):
         self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
 
         # initialization
-        initialize_weights([self.conv1, self.conv2], 0.1)
+        common.initialize_weights([self.conv1, self.conv2], 0.1)
 
     def forward(self, x):
         identity = x
@@ -38,14 +38,14 @@ class MSRResNet(nn.Module):
 
     def __init__(self, args, conv=common.default_conv):
         super(MSRResNet, self).__init__()
-        self.upscale = upscale
+        
         self.in_nc = in_nc = args.input_channel
         self.out_nc = out_nc = args.input_channel 
         self.nf = nf = args.n_feats 
         self.upscale = scale = args.scale[0] if type(args.scale)==tuple else args.scale    # [HxW] or [HxH]
         self.nb = nb = args.n_resblocks
         self.n_estimators = n_estimators = args.n_estimators
-        kernel_size = 3
+        self.kernel_size = kernel_size = 3
 
         m_head = [conv(args.input_channel, nf, kernel_size)]
         basic_block = functools.partial(ResidualBlock_noBN, nf=nf)
@@ -62,10 +62,10 @@ class MSRResNet(nn.Module):
         self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         
         self.head = nn.Sequential(*m_head)
-        self.body = nn.ModuleList(*m_body)
+        self.body = nn.ModuleList(m_body)
         self.tail = nn.Sequential(*m_tail)
         
-        common.initialize_weight([self.head, self.body, self.tail], 0.1)
+        common.initialize_weights([self.head, self.body, self.tail], 0.1)
 
     def forward(self, x):
         fea = self.lrelu(self.head(x))
@@ -80,7 +80,7 @@ class MSRResNet(nn.Module):
     
 class EUNAF_MSRResNet(MSRResNet):
     def __init__(self, args, conv=common.default_conv):
-        super(EUNAF_MSRResNet).__init__(args) 
+        super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
@@ -94,8 +94,8 @@ class EUNAF_MSRResNet(MSRResNet):
         
         for _ in range(num_blocks):
             m_tail = [
-                common.Upsampler(conv, scale, nf, act='lrelu'),
-                conv(nf, out_nc, kernel_size),
+                common.Upsampler(conv, self.upscale, self.nf, act='lrelu'),
+                conv(self.nf, self.out_nc, self.kernel_size),
             ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -119,7 +119,7 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def eunaf_forward(self, x):
         fea = self.lrelu(self.head(x))
-        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False).clone()
         
         outs = list() 
         masks = list()
@@ -128,14 +128,14 @@ class EUNAF_MSRResNet(MSRResNet):
             fea = self.body[i](fea) 
             
             if i==self.nb - 1:
-                out = self.tail(out)
+                out = self.tail(fea)
                 out += base
                 outs.append(out)
                 
             else:
                 if i > (self.nb - self.n_estimators)-1 :
                     tmp_fea = fea.clone().detach() 
-                    tmp_out = self.predictors[i - self.nb + self.n_estimators]
+                    tmp_out = self.predictors[i - self.nb + self.n_estimators](tmp_fea)
                     outs.append(tmp_out + base)
                 elif i==(self.nb - self.n_estimators)-1 :
                     for j in range(self.n_estimators):

@@ -12,7 +12,7 @@ def get_parser():
 
     parser.add_argument('--dataset', type=str, default='Set5', help='Set5, Set14')
     parser.add_argument('--root', type=str, default='../../data/')
-    parser.add_argument('--scale', type=int, default=2)
+    parser.add_argument('--scale', type=int, default=4)
     parser.add_argument('--save_dir', type=str, default='../../data/PATCHES_RGB/')
     parser.add_argument('--patch_size', type=int, default=8)
 
@@ -83,7 +83,8 @@ if __name__ == '__main__':
     main()
                 
 """
-Set 14 - 8x8 - 12492
+Set 14 - 8x8 - 12492 (x2)
+Set 14 - 8x8 - 3069 (x4)
 """
         
         
