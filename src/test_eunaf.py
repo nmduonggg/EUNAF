@@ -419,7 +419,7 @@ def test():
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         x  = x.cuda()
         yt = yt.cuda()
-
+        yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         with torch.no_grad():
             out = core.eunaf_forward(x)
             # out = core(x)

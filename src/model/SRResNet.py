@@ -79,8 +79,8 @@ class MSRResNet(nn.Module):
         return out
     
 class EUNAF_MSRResNet(MSRResNet):
-    def __init__(self, args):
-        super(EUNAF_MSRResNet).__init__() 
+    def __init__(self, args, conv=common.default_conv):
+        super(EUNAF_MSRResNet).__init__(args) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)

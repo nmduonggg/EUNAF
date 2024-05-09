@@ -2,6 +2,7 @@ import os
 import torch
 import shutil
 import scipy.stats as stats
+import torch.nn.functional as F
 
 def save_args(__file__, args):
     shutil.copy(os.path.basename(__file__), args.cv_dir)
@@ -32,6 +33,16 @@ def confidence_interval_mean(estimated_mean, estimated_stddev, sample_size, conf
     upper_bound = estimated_mean + margin_of_error
     
     return lower_bound, upper_bound
+
+def resize_image_tensor(lr_image, hr_image, scale, rgb_range):
+    hr_height, hr_width = hr_image.shape[2:4]
+    lr_height, lr_width = lr_image.shape[2:4]
+    if lr_height * scale != hr_height or lr_width * scale != lr_width:
+        hr_width = lr_width * scale
+        hr_height = lr_height * scale
+        hr_image = F.interpolate(hr_image, size=(hr_height, hr_width), mode='bicubic')
+        hr_image.clamp(min=0, max = rgb_range)
+    return hr_image
 
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):

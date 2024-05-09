@@ -1,6 +1,7 @@
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
+from model import common
 
 
 def gumbel_softmax(x, dim, tau):
@@ -45,14 +46,13 @@ class SMM(nn.Module):
         self.spa_mask = nn.Sequential(
             nn.Conv2d(in_channels, in_channels//4, 3, 1, 1),
             nn.ReLU(True),
-            nn.AvgPool2d(2),
             nn.Conv2d(in_channels//4, in_channels//4, 3, 1, 1),
             nn.ReLU(True),
-            nn.ConvTranspose2d(in_channels // 4, 2, 3, 2, 1, output_padding=1),
+            nn.Conv2d(in_channels // 4, 2, 3, 1, 1),
         )
 
         # body
-        self.body = SMB(in_channels, out_channels, kernel_size, stride, padding, bias, n_layers=4)
+        self.body = SMB(in_channels, out_channels, kernel_size, stride, padding, bias, n_layers=2)
 
         # CA layer
         self.ca = CALayer(out_channels, reduction)
@@ -142,7 +142,7 @@ class SMSR(nn.Module):
         self.n_resblocks = n_resblocks = args.n_resblocks
         self.n_feats = n_feats =  args.n_feats
         self.reduction = reduction = args.reduction
-        self.kernel_size = kernel_size = args.kernel_size
+        self.kernel_size = kernel_size = 3
         self.scale = scale = args.scale[0] if type(args.scale)==tuple else args.scale    # [HxW] or [HxH]
         self.act = act = nn.ReLU(True)
         
@@ -155,7 +155,7 @@ class SMSR(nn.Module):
         # body
         modules_body = [
             SMM(
-                n_feats, n_feats, kernel_size) for _ in range(self.n_resblocks, reduction=reduction)]
+                n_feats, n_feats, kernel_size, reduction=reduction) for _ in range(self.n_resblocks)]
         
         # collect
         self.collect = nn.Sequential(
@@ -218,10 +218,11 @@ class EUNAF_SMSR(SMSR):
         
         interm_predictors = nn.ModuleList()
         for i in range(num_blocks):
-            collect_feat = feat_range[0] - 1 if is_estimator else feat_range[i]
-            m_tail = [
-                nn.Conv2d(self.n_feats*collect_feat, self.n_feats, 1, 1, 0), nn.ReLU(True), 
-                nn.Conv2d(self.n_feats, self.n_feats, 3, 1, 1)
+            collect_feat = feat_range[i]
+            if not is_estimator:
+                m_tail = [nn.Conv2d(self.n_feats*collect_feat, self.n_feats, 3, 1, 1), nn.ReLU(True)]
+            else: m_tail = []
+            m_tail += [
                 common.Upsampler(conv, self.scale, self.n_feats, act=False),
                 conv(self.n_feats, out_channels, self.kernel_size)
             ]
@@ -268,7 +269,9 @@ class EUNAF_SMSR(SMSR):
         # enauf frame work start here
         outs = list() 
         masks = list()
-            
+        
+        out_fea = list()
+        sparsity = list()
         for i in range(self.n_resblocks):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
             round_spa, round_ch = _spa_mask.round(), _ch_mask.round()
@@ -285,8 +288,9 @@ class EUNAF_SMSR(SMSR):
             else:
                 if i > (self.n_resblocks - self.n_estimators) - 1:
                     tmp_out_fea = [t.clone().detach() for t in out_fea]
-                    tmp_out_fea = torch.cat(tmp_out_fea) + x.clone().detach()
-                    tmp_out = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_out_fea) 
+                    tmp_out_fea = torch.cat(tmp_out_fea, dim=1)
+                    tmp_out = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_out_fea)  + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
+                    
                     outs.append(tmp_out)
                     
                 elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
