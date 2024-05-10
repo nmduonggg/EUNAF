@@ -3,7 +3,7 @@ python test_eunaf.py \
     --testset_tag Set14RGB \
     --N 14 \
     --testset_dir ../../data/ \
-    --train_stage 2 \
+    --train_stage 1 \
     --n_resblocks 16 \
     --n_estimators 4 \
     --scale 2 \

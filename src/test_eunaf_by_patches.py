@@ -160,24 +160,6 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
     plt.close(fig)
     plt.show()
     
-    # masks_np = process_unc_map(masks, False, True)
-    # new_out_dir = os.path.join(out_dir, "Mask_Diff")
-    # os.makedirs(new_out_dir, exist_ok=True)
-    
-    # save_file = os.path.join(new_out_dir, f"img_{id}_mask_diff.jpeg")
-    # fig, axs = plt.subplots(1, len(masks_np)-1, 
-    #                         tight_layout=True, figsize=(60, 20))
-    # for i, m in enumerate(masks_np):
-    #     if i==len(masks_np)-1: continue
-    #     axs[i].imshow((m > masks_np[i+1]).astype(int)*255)
-    #     axs[i].axis('off')
-    #     axs[i].set_title(f'block {i} - perf {val_perfs[i].detach().item()}')
-        
-    # plt.savefig(save_file)
-    # plt.close(fig)
-    # plt.show()
-    
-    
 
 def visualize_histogram_im(masks, id):
     
@@ -295,67 +277,11 @@ def visualize_error_map(yfs, yt, id):
     plt.close(fig)
     plt.show()
     
-# def visualize_fusion_map(outs, masks, im_idx, align_biases=None):
-    
-#     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
-#     masks = [torch.mean(torch.exp(m.squeeze(0)), dim=0, keepdim=True) for m in masks]
-#     # masks[-1] *= 1.0
-#     all_masks = torch.stack(masks, dim=-1) # 1xHxW -> 1xHxWxN
-#     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xHxW
-#     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # 1xHxWxN
-    
-#     filter_outs = list()
-#     for i, out in enumerate(outs):
-#         cur_mask = onehot_indices[..., i]  # 1xHxW binary
-#         cur_out = out.squeeze(0) * cur_mask.repeat(3, 1, 1)
-#         filter_outs.append(cur_out)   #CxHxW
-
-#     fig, axs = plt.subplots(ncols=len(filter_outs)+1, nrows=1, figsize=(20, 4))
-#     for i in range(len(filter_outs) + 1):
-#         if i<len(filter_outs):
-#             fout = filter_outs[i]
-#             p = onehot_indices[..., i].float().mean()
-#         else:
-#             # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
-#             fout = torch.sum(torch.stack(filter_outs, dim=0), dim=0)
-#             p=1
-            
-#         fout = fout.permute(1,2,0)  # CxHxW -> HxWxC
-#         fout = fout.detach().cpu().numpy()
-#         try:
-#             cur_mask = onehot_indices[..., i].permute(1,2,0).cpu().numpy()  # 1xHxW binary
-#         except:
-#             cur_mask = np.ones_like(fout)
-#         fout_ = ((fout*255)*cur_mask).round().astype(np.uint8)
-            
-#         axs[i].imshow(fout_)
-#         axs[i].set_title(f"p={p*100:.2f}% - block={i}")
-        
-#         plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
-    
-#     plt.savefig(save_file)
-#     plt.close(fig)
-#     plt.show()
-    
-#     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
-    
-#     return fout
-
 def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_biases=None):
     
     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
-    # for m in masks:
-    #     print(m.max(), m.min())
     masks = [torch.exp(m) for i, m in enumerate(masks)]
-    # masks[-1] *= 1.08
-    # masks[-1] *= torch.mean(masks[0], dim=[2,3], keepdim=True) / torch.mean(masks[-1], dim=[2,3], keepdim=True)
-    # new_masks = list()
-    # for i in range(len(masks)):
-    #     tmp_mask = masks[i]
-    #     tmp_mask = (tmp_mask - torch.mean(tmp_mask, dim=[2,3], keepdim=True)) / torch.std(tmp_mask, dim=[2,3], keepdim=True)
-    #     new_masks.append(tmp_mask)
-    # masks = new_masks
-    
+
     all_masks = torch.stack(masks, dim=-1) # 1xCxHxW -> 1xCxHxWxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xCxHxW
     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # 1xCxHxWxN
@@ -421,7 +347,7 @@ def visualize_fusion_map_by_errors(outs, yt, im_idx):
             p=1
             fout_ = np.clip(fout*cur_mask, 0, 1)
             
-            plt.imsave(os.path.join(out_dir, f"img_fusio_{im_idx}n_by_error.jpeg"), fout_)
+            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_fusion_by_error.jpeg"), fout_)
     
     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
     
@@ -434,6 +360,9 @@ psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
 
+patch_size = 32
+step = 28
+
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
     ssims_val = [0 for _ in range(num_blocks)]
@@ -442,28 +371,51 @@ def test():
     total_mask_loss = 0.0
     psnr_fuse, ssim_fuse = 0.0, 0.0
     psnr_fuse_err, ssim_fuse_err = 0.0, 0.0
+    
     #walk through the test set
     core.eval()
-    # core.train()
     for m in core.modules():
         if hasattr(m, '_prepare'):
             m._prepare()
-    # align_biases = core.align_biases
+            
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
-        x  = x.cuda()
-        yt = yt.cuda()
-        yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
-        with torch.no_grad():
-            out = core.eunaf_forward(x)
-            # out = core(x)
+        # x  = x.cuda()
+        # yt = yt.cuda()
         
-        yfs, masks = out
+        yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
+        # yt = utils.modcrop(yt)
+        
+        # cut patches
+        x_np = x.permute(0,2,3,1).squeeze(0).numpy()
+        lr_list, num_h, num_w, h, w = utils.crop_cpu(x_np, patch_size, step)
+        yt = yt[:, :, :h*args.scale, :w*args.scale]
+        
+        combine_img_lists = [list() for _ in range(num_blocks)]
+        combine_unc_lists = [list() for _ in range(num_blocks)]
+        for lr_img in lr_list:
+            img = lr_img.astype(np.float32) 
+            img = img[:, :, :3]
+            img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).cuda()
+        
+            with torch.no_grad():
+                out = core.eunaf_forward(img)
+            
+            p_yfs, p_masks = out
+            for i in range(len(p_yfs)):
+                combine_img_lists[i].append(p_yfs[i].cpu().squeeze(0).permute(1,2,0).numpy())
+                combine_unc_lists[i].append(p_masks[i].cpu().squeeze(0).permute(1,2,0).numpy())
+            
+        yfs, masks = list(), list()
+        for i in range(num_blocks):
+            yfs.append(
+                torch.from_numpy(utils.combine(combine_img_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
+            masks.append(
+                torch.from_numpy(utils.combine(combine_unc_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
+            
         yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
         yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
-        yf_fuse_by_err = yf_fuse_by_err.cuda()
-        yf_fuse = yf_fuse.cuda()
         
         percent_total += percent
         percent_total_err += percent_err
@@ -476,9 +428,6 @@ def test():
         
         if args.visualize:
             visualize_histogram_im(masks, batch_idx)
-            # visualize_error_map(yfs, yt, batch_idx)
-            # get_error_btw_F(yfs, batch_idx)
-            # visualize_unc_enhance(masks, batch_idx)
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / num_blocks
             
@@ -504,10 +453,6 @@ def test():
             ssims_val[i] += ssim_v_layers[i]
             uncertainty_val[i] = uncertainty_val[i] + torch.exp(masks[i]).contiguous().cpu().mean()
         total_val_loss += val_loss
-        
-        
-    # np_fn = os.path.join(out_dir, f'psn_unc_{args.testset_tag}.npy')
-    # np.save(np_fn, psnr_unc_map)
 
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
     ssims_val = [p / len(XYtest) for p in ssims_val]

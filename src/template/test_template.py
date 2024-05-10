@@ -70,6 +70,17 @@ def set_template(args):
         args.n_feats=64
         args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
+    elif  args.template == 'EUNAF_SRResNetxN':
+        print('[INFO] Template found (SRResNet SR)')
+        args.style='RGB'
+        args.rgb_range=1.0
+        args.input_channel=3
+        args.core='EUNAF_SRResNet'
+        args.n_resblocks = 16
+        args.reduction=16
+        args.n_feats=64
+        args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
+        print(vars(args))
     else:
         print('[ERRO] Template not found')
         assert(0)

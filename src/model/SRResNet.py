@@ -102,6 +102,13 @@ class EUNAF_MSRResNet(MSRResNet):
             
         return interm_predictors
     
+    def freeze_backbone(self):
+        for n, p in self.named_parameters():
+            if 'predictors' not in n and 'estimators' not in n:
+                p.requires_grad = False
+            else:
+                print(n, end="; ")
+    
     def forward(self, x):
         fea = self.lrelu(self.head(x))
         

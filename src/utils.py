@@ -1,6 +1,7 @@
 import os
 import torch
 import shutil
+import numpy as np
 import scipy.stats as stats
 import torch.nn.functional as F
 
@@ -43,6 +44,50 @@ def resize_image_tensor(lr_image, hr_image, scale, rgb_range):
         hr_image = F.interpolate(hr_image, size=(hr_height, hr_width), mode='bicubic')
         hr_image.clamp(min=0, max = rgb_range)
     return hr_image
+
+def crop_cpu(img, crop_sz, step):
+    n_channels = len(img.shape)
+    if n_channels == 2:
+        h, w = img.shape
+    elif n_channels == 3:
+        h, w, c = img.shape
+    else:
+        raise ValueError('Wrong image shape - {}'.format(n_channels))
+    h_space = np.arange(0, h - crop_sz + 1, step)
+    w_space = np.arange(0, w - crop_sz + 1, step)
+    index = 0
+    num_h = 0
+    lr_list=[]
+    for x in h_space:
+        num_h += 1
+        num_w = 0
+        for y in w_space:
+            num_w += 1
+            index += 1
+            if n_channels == 2:
+                crop_img = img[x:x + crop_sz, y:y + crop_sz]
+            else:
+                crop_img = img[x:x + crop_sz, y:y + crop_sz, :]
+            lr_list.append(crop_img)
+    h=x + crop_sz
+    w=y + crop_sz
+    return lr_list, num_h, num_w, h, w
+
+def combine(sr_list, num_h, num_w, h, w, patch_size, step, scale):
+    index=0
+    sr_img = np.zeros((h*scale, w*scale, 3), 'float32')
+    for i in range(num_h):
+        for j in range(num_w):
+            sr_img[i*step*scale:i*step*scale+patch_size*scale, j*step*scale:j*step*scale+patch_size*scale,:] += sr_list[index]
+            index+=1
+    sr_img=sr_img.astype('float32')
+
+    for j in range(1,num_w):
+        sr_img[:,j*step*scale:j*step*scale+(patch_size-step)*scale,:]/=2
+
+    for i in range(1,num_h):
+        sr_img[i*step*scale:i*step*scale+(patch_size-step)*scale,:,:]/=2
+    return sr_img
 
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):
