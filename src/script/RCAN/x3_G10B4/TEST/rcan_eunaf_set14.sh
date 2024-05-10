@@ -3,7 +3,7 @@ python test_eunaf.py \
     --testset_tag Set14RGB \
     --N 14 \
     --testset_dir ../../data/ \
-    --train_stage 1 \
+    --train_stage 2 \
     --n_estimators 4 \
     --scale 3 \
     --eval_tag ssim \
