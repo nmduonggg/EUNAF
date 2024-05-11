@@ -294,52 +294,6 @@ def visualize_error_map(yfs, yt, id):
     plt.savefig(save_file)
     plt.close(fig)
     plt.show()
-    
-# def visualize_fusion_map(outs, masks, im_idx, align_biases=None):
-    
-#     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
-#     masks = [torch.mean(torch.exp(m.squeeze(0)), dim=0, keepdim=True) for m in masks]
-#     # masks[-1] *= 1.0
-#     all_masks = torch.stack(masks, dim=-1) # 1xHxW -> 1xHxWxN
-#     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xHxW
-#     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # 1xHxWxN
-    
-#     filter_outs = list()
-#     for i, out in enumerate(outs):
-#         cur_mask = onehot_indices[..., i]  # 1xHxW binary
-#         cur_out = out.squeeze(0) * cur_mask.repeat(3, 1, 1)
-#         filter_outs.append(cur_out)   #CxHxW
-
-#     fig, axs = plt.subplots(ncols=len(filter_outs)+1, nrows=1, figsize=(20, 4))
-#     for i in range(len(filter_outs) + 1):
-#         if i<len(filter_outs):
-#             fout = filter_outs[i]
-#             p = onehot_indices[..., i].float().mean()
-#         else:
-#             # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
-#             fout = torch.sum(torch.stack(filter_outs, dim=0), dim=0)
-#             p=1
-            
-#         fout = fout.permute(1,2,0)  # CxHxW -> HxWxC
-#         fout = fout.detach().cpu().numpy()
-#         try:
-#             cur_mask = onehot_indices[..., i].permute(1,2,0).cpu().numpy()  # 1xHxW binary
-#         except:
-#             cur_mask = np.ones_like(fout)
-#         fout_ = ((fout*255)*cur_mask).round().astype(np.uint8)
-            
-#         axs[i].imshow(fout_)
-#         axs[i].set_title(f"p={p*100:.2f}% - block={i}")
-        
-#         plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
-    
-#     plt.savefig(save_file)
-#     plt.close(fig)
-#     plt.show()
-    
-#     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
-    
-#     return fout
 
 def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_biases=None):
     
@@ -396,7 +350,7 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
 
 def visualize_fusion_map_by_errors(outs, yt, im_idx):
     
-    errors = [torch.abs(out-outs[-1]) for out in outs]
+    errors = [torch.mean(torch.abs(out-outs[-1]), dim=1, keepdims=True) for out in outs]
     
     all_masks = torch.stack(errors, dim=-1) # 1xCxHxW -> 1xCxHxWxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xCxHxW
@@ -421,7 +375,48 @@ def visualize_fusion_map_by_errors(outs, yt, im_idx):
             p=1
             fout_ = np.clip(fout*cur_mask, 0, 1)
             
-            plt.imsave(os.path.join(out_dir, f"img_fusio_{im_idx}n_by_error.jpeg"), fout_)
+            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_fusion_by_error.jpeg"), fout_)
+    
+    fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
+    
+    return fout, percent
+        
+def visualize_classified_map(outs, masks, im_idx):
+    
+    # masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks]
+    # masks = [torch.log(m) for m in masks]
+    
+    all_masks = torch.stack(masks, dim=-1) # 1xCxHxW -> 1xCxHxWxN
+    raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xCxHxW
+    onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # 1xCxHxWxN
+    
+    filter_outs = process_unc_map(outs, to_heatmap=False, abs=False, rescale=False)
+    processed_outs = list()
+    percent = np.zeros(shape=[len(filter_outs)])
+    
+    class_colors = [
+        [40, 66, 235],
+        [19, 239, 85],
+        [235, 255, 128],
+        [255, 0, 0]
+    ]
+
+    for i in range(len(filter_outs) + 1):
+        if i<len(filter_outs):
+            fout = np.ones_like(filter_outs[i]) * np.array(class_colors[i])/255.0
+            p = onehot_indices[..., i].float().mean()
+            percent[i] = p
+            cur_mask = onehot_indices[..., i].squeeze(0).permute(1,2,0).cpu().numpy().astype(np.uint8)
+            
+            cur_fout = fout*cur_mask
+            processed_outs.append(fout * cur_mask)
+        else:
+            fout = np.sum(np.stack(processed_outs, axis=0), axis=0)
+            cur_mask = np.ones_like(fout).astype(np.uint8)
+            p=1
+            fout_ = np.clip(fout*cur_mask, 0, 1)
+            
+            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_classify.jpeg"), fout_)
     
     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
     
@@ -493,6 +488,7 @@ def test():
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
         visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        visualize_classified_map(yfs, masks, batch_idx)
         
         if args.visualize:
             visualize_unc_map(

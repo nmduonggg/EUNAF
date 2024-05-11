@@ -61,7 +61,7 @@ num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(num_blocks // 2, args.n_estimators)
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
-lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
 early_stopper = utils.EarlyStopper(patience=25)
 loss_func = loss.create_loss_func(args.loss)
 

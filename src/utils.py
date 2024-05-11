@@ -1,5 +1,6 @@
 import os
 import torch
+import cv2
 import shutil
 import numpy as np
 import scipy.stats as stats
@@ -88,6 +89,23 @@ def combine(sr_list, num_h, num_w, h, w, patch_size, step, scale):
     for i in range(1,num_h):
         sr_img[i*step*scale:i*step*scale+(patch_size-step)*scale,:,:]/=2
     return sr_img
+
+def apply_alpha_mask(foreground, background, alpha):
+    # Convert uint8 to float
+    foreground = foreground.astype(float)
+    background = background.astype(float)
+
+    # Multiply the foreground with the alpha matte
+    foreground = cv2.multiply(alpha, foreground)
+    
+    # Multiply the background with (1 - alpha)
+    background = cv2.multiply(1.0 - alpha, background)
+    
+    # Add the masked foreground and background.
+    outImage = cv2.add(foreground, background)
+
+    # Return a normalized output image for display
+    return outImage
 
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):

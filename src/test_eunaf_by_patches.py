@@ -352,6 +352,36 @@ def visualize_fusion_map_by_errors(outs, yt, im_idx):
     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
     
     return fout, percent
+
+def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
+    # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
+    yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
+    masks = [
+        np.stack([np.exp(pm).mean() for pm in bm], axis=0) for bm in p_masks] 
+    
+    all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
+    raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
+    onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # PxN
+    
+    processed_outs = 0
+    class_colors = [
+        [40, 66, 235],
+        [19, 239, 85],
+        [235, 255, 128],
+        [255, 0, 0]
+    ]
+
+    for i in range(len(p_masks) ):
+        fout = np.ones_like(yfs[i]) * np.array(class_colors[i])/255.0
+        cur_mask = onehot_indices[..., i].numpy().astype(np.uint8)
+        cur_mask = cur_mask.reshape(-1, 1, 1, 1)
+        
+        cur_fout = (fout*cur_mask)
+        processed_outs += cur_fout
+    
+    classified_map = [processed_outs[i,...] for i in range(processed_outs.shape[0])]
+    
+    return classified_map
         
 # testing
 
@@ -360,8 +390,8 @@ psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
 
-patch_size = 32
-step = 28
+patch_size = 8
+step = 6
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -442,6 +472,13 @@ def test():
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
         visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+        
+        classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+        plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+        yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+        masked_yt = utils.apply_alpha_mask(yt_image, classified_map, 0.5)
+        plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
         
         if args.visualize:
             visualize_unc_map(

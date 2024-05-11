@@ -106,7 +106,6 @@ def set_template(args):
         args.batch_size=16
         args.epoch_step=30
         args.val_each=1
-        args.max_epochs=1000
         args.loss='L1'
         args.style='RGB'
         args.trainset_tag='DIV2K'
