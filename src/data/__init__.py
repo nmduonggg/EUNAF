@@ -22,7 +22,7 @@ from data.Set5_RGB_testset import Set5_RGB_testset
 from data.BSD100_RGB_testset import BSD100_RGB_testset
 from data.Urban100_RGB_testset import Urban100_RGB_testset
 from data.Flickr2K_testset import Flickr2K_testset
-
+from data.Manga109_testset import Manga109_testset
 def load_trainset(args):
     tag = args.trainset_tag
     if tag == 'SR291B' and args.style == 'Y':
@@ -57,6 +57,10 @@ def load_testset(args):
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
         return Flickr2K_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
+    elif tag== 'Manga109' and args.style=='RGB':
+        print('[WARN] RGB range (<rgb_range>) set to 1.0')
+        batch_size_test = 1
+        return Manga109_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
     elif tag=='Urban100' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
