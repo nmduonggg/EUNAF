@@ -493,7 +493,7 @@ def test():
         if args.visualize:
             visualize_unc_map(
                 [m[:, :1, ...] for m in masks], 
-                batch_idx, perf_v_layers)
+                batch_idx, psnr_v_layers)
             
         for i, p in enumerate(psnr_v_layers):
             psnrs_val[i] = psnrs_val[i] + p
