@@ -390,8 +390,8 @@ psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
 
-patch_size = 8
-step = 6
+patch_size = 32
+step = 28
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -456,9 +456,6 @@ def test():
         psnr_fuse_err += cur_psnr_fuse_err
         ssim_fuse_err += cur_ssim_fuse_err
         
-        if args.visualize:
-            visualize_histogram_im(masks, batch_idx)
-        
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / num_blocks
             
         perf_v_layers = [evaluation.calculate_all(args, yf, yt) for yf in yfs]
@@ -472,18 +469,15 @@ def test():
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
         visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
-        classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
         
-        classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-        plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
-        yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-        masked_yt = utils.apply_alpha_mask(yt_image, classified_map, 0.5)
-        plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
         
         if args.visualize:
-            visualize_unc_map(
-                [m[:, :1, ...] for m in masks], 
-                batch_idx, perf_v_layers)
+            classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+            classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            masked_yt = utils.apply_alpha_mask(yt_image, classified_map, 0.5)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
             
         for i, p in enumerate(psnr_v_layers):
             psnrs_val[i] = psnrs_val[i] + p

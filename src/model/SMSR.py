@@ -46,8 +46,6 @@ class SMM(nn.Module):
         self.spa_mask = nn.Sequential(
             nn.Conv2d(in_channels, in_channels//4, 3, 1, 1),
             nn.ReLU(True),
-            nn.Conv2d(in_channels//4, in_channels//4, 3, 1, 1),
-            nn.ReLU(True),
             nn.Conv2d(in_channels // 4, 2, 3, 1, 1),
         )
 
@@ -77,7 +75,7 @@ class SMM(nn.Module):
         
     
 class SMB(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False, n_layers= 4):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False, n_layers=2):
         super().__init__()
         self.ch_mask = nn.Parameter(torch.rand(1, out_channels, n_layers, 2))
         self.tau=1
@@ -243,23 +241,23 @@ class EUNAF_SMSR(SMSR):
         x = self.head(x0)
         fea = x
         
-        sparsity = []
+        # sparsity = []
         out_fea = []
         for i in range(self.n_resblocks):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
             round_spa, round_ch = _spa_mask.round(), _ch_mask.round()
             out_fea.append(fea)
-            sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
-            self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
+            # sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
+            # self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
         out_fea = self.collect(torch.cat(out_fea, 1)) + x
-        sparsity = torch.cat(sparsity, 0)
+        # sparsity = torch.cat(sparsity, 0)
         
         x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
         
         outs = [torch.zeros_like(x) for _ in range(self.n_estimators-1)] + [x]
         masks = [torch.zeros_like(x) for _ in range(self.n_estimators)]
         
-        return [outs, sparsity], masks
+        return [outs], masks
     
     def eunaf_forward(self, x):
         x0 = x
@@ -271,17 +269,17 @@ class EUNAF_SMSR(SMSR):
         masks = list()
         
         out_fea = list()
-        sparsity = list()
+        # sparsity = list()
         for i in range(self.n_resblocks):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
             round_spa, round_ch = _spa_mask.round(), _ch_mask.round()
             out_fea.append(fea)
-            sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
-            self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
+            # sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
+            # self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
             
             if i==self.n_resblocks-1:
                 out_fea = self.collect(torch.cat(out_fea, 1)) + x
-                sparsity = torch.cat(sparsity, 0)
+                # sparsity = torch.cat(sparsity, 0)
                 out = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
                 outs.append(out)
                 

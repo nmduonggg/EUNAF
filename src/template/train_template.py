@@ -109,7 +109,7 @@ def set_template(args):
         args.loss='L1'
         args.style='RGB'
         args.trainset_tag='DIV2K'
-        args.trainset_patch_size=48
+        args.trainset_patch_size=32
         args.trainset_dir='../../data/DIV2K/'
         args.rgb_range=1.0
         args.core='EUNAF_SRResNet'

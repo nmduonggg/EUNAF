@@ -126,7 +126,7 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def eunaf_forward(self, x):
         fea = self.lrelu(self.head(x))
-        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False).clone()
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         
         outs = list() 
         masks = list()

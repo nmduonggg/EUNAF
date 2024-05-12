@@ -8,4 +8,4 @@ python test_eunaf_by_patches.py \
     --n_estimators 4 \
     --scale 2 \
     --eval_tag ssim \
-    # --visualize
+    --visualize
