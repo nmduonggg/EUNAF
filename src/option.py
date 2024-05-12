@@ -39,7 +39,7 @@ parser.add_argument('--n_resgroups', type=int, default=-1, help='number of resid
 
 # test
 parser.add_argument("--visualize", action='store_true')
-parser.add_argument("--y_channel", action='store_true', help='Calculate PSNR on Y channel or RGB image')
+parser.add_argument("--rgb_channel", action='store_true', help='Calculate PSNR on Y channel or RGB image')
 
 parser.add_argument("--optimizer", default="SGD", help="optimizer")
 #--sgd

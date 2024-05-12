@@ -3,7 +3,7 @@ from evaluation.ssim import calculate_ssim as ssim
 
 def calculate(args, y, yt):
     if args.eval_tag == 'psnr':
-        return psnr(y, yt, args.scale, args.rgb_range, args.y_channel)
+        return psnr(y, yt, args.scale, args.rgb_range, args.rgb_channel)
     elif args.eval_tag == 'ssim':
         return ssim(y, yt, args.scale)
     else:
