@@ -62,7 +62,7 @@ def set_template(args):
         print('[INFO] Template found (SMSR SR)')
         args.lr_decay_ratio=0.5
         args.weight_decay=0
-        args.batch_size=16
+        args.batch_size=8
         args.epoch_step=30
         args.val_each=1
         args.loss='L1'
