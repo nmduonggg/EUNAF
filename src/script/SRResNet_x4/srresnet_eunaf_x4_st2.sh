@@ -9,6 +9,7 @@ python train_eunaf.py \
     --testset_dir='../../data/' \
     --trainset_preload 400 \
     --n_estimators 4 \
+    --rgb_channel \
     --weight './checkpoints/EUNAF_SRResNetxN_x2_nb16_nf64_st1/_best.t7' \
     # --lr 0.00
     # --max_load 1000

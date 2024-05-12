@@ -11,7 +11,7 @@ def calculate(args, y, yt):
         assert(0)
         
 def calculate_all(args, y, yt):
-    psnr_score = psnr(y, yt, args.scale, args.rgb_range, args.y_channel)
+    psnr_score = psnr(y, yt, args.scale, args.rgb_range, args.rgb_channel)
     ssim_score = ssim(y, yt, args.scale)
     return (psnr_score, ssim_score)
 

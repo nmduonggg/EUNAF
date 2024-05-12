@@ -8,6 +8,7 @@ python train_eunaf.py \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
     --trainset_preload 400 \
+    --rgb_channel \
     --n_estimators 4 \
     --weight './checkpoints/EUNAF_SRResNetxN_x2_nb16_nf64_st0/_best.t7' \
     # --wandb \

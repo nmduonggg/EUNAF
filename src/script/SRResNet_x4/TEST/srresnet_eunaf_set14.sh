@@ -8,5 +8,6 @@ python test_eunaf.py \
     --n_estimators 4 \
     --scale 4 \
     --eval_tag ssim \
+    --rgb_channel
     --weight './checkpoints/EUNAF_EDSRx2_bl_x2_nb16_nf64_st1/_best.t7' \
     # --visualize \

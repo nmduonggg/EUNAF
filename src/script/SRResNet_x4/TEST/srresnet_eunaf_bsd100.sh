@@ -8,4 +8,5 @@ python test_eunaf.py \
     --n_estimators 4 \
     --scale 4 \
     --eval_tag psnr \
+    --rgb_channel 
     # --visualize
