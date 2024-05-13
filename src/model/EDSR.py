@@ -93,6 +93,7 @@ class EUNAF_EDSR(EDSR):
         self.n_estimators = min(args.n_estimators, self.n_resblocks // 2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+        
             
     def get_n_estimators(self):
         return self.n_estimators
@@ -102,8 +103,10 @@ class EUNAF_EDSR(EDSR):
         interm_predictors = nn.ModuleList()
         for _ in range(num_blocks):
             m_tail = [
-                common.Upsampler(conv, self.scale, self.n_feats, act=False),
-                conv(self.n_feats, out_channels, self.kernel_size)
+                conv(self.n_feats, out_channels*self.scale*self.scale, self.kernel_size),
+                nn.PixelShuffle(self.scale),
+                conv(out_channels, out_channels, 1)
+                
             ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -112,7 +115,7 @@ class EUNAF_EDSR(EDSR):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n and 'align_biases' not in n:
+            if 'predictors' not in n and 'estimators' not in n and 'tail' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")
@@ -120,17 +123,33 @@ class EUNAF_EDSR(EDSR):
     def forward(self, x):
         x = self.sub_mean(x)
         x = self.head(x)
-
-        for i in range(self.n_estimators):
-            res = self.body[i](x) if i==0 else self.body[i](res)
-        res += x
-
-        x = self.tail(res)
-        x = self.add_mean(x)
+        shortcut = x
         
-        outs = [torch.zeros_like(x) for _ in range(self.n_estimators - 1)] + [x]
-        masks = [torch.zeros_like(x) for _ in range(self.n_estimators)]
-        
+        # enauf frame work start here
+        outs = list() 
+        masks = list()
+            
+        for i in range(self.n_resblocks):
+            x = self.body[i](x) 
+            
+            if i==self.n_resblocks-1:
+                x += shortcut
+                x = self.tail(x) 
+                out = self.add_mean(x)
+                outs.append(out)
+                
+            else:
+                if i > (self.n_resblocks - self.n_estimators) - 1:
+                    tmp_x = (x + shortcut)
+                    tmp_x = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_x) 
+                    out = self.add_mean(tmp_x) 
+                    outs.append(out)
+                elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
+                    for j in range(self.n_estimators): 
+                        mask = self.estimators[j](x)
+                        mask = self.add_mean(mask)
+                        masks.append(mask)  
+                    
         return outs, masks
     
     def eunaf_forward(self, x):
@@ -153,13 +172,13 @@ class EUNAF_EDSR(EDSR):
                 
             else:
                 if i > (self.n_resblocks - self.n_estimators) - 1:
-                    tmp_x = (x + shortcut).clone().detach()
+                    tmp_x = (x + shortcut)
                     tmp_x = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_x) 
                     out = self.add_mean(tmp_x) 
                     outs.append(out)
                 elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
                     for j in range(self.n_estimators): 
-                        mask = self.estimators[j](x.clone().detach())
+                        mask = self.estimators[j](x)
                         mask = self.add_mean(mask)
                         masks.append(mask)  
                     

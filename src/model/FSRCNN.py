@@ -58,9 +58,7 @@ class EUNAF_FSRCNN(FSRCNN):
         for _ in range(num_blocks):
             m_tail = [
                 nn.PReLU(),
-                nn.ConvTranspose2d(
-                    in_channels=self.sf, out_channels=self.input_channels, kernel_size=9,\
-                    stride=self.upscale, padding=3, output_padding=1)
+                nn.ConvTranspose2d(in_channels=self.sf, out_channels=out_channels, kernel_size=9, stride=self.upscale, padding=3, output_padding=1)
             ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -69,7 +67,7 @@ class EUNAF_FSRCNN(FSRCNN):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n:
+            if 'predictors' not in n and 'estimators' not in n and 'tail' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")
@@ -99,12 +97,12 @@ class EUNAF_FSRCNN(FSRCNN):
                 
             else:
                 if i > (self.m - self.n_estimators)-1:
-                    tmp_fea = fea.clone().detach()
+                    tmp_fea = fea
                     tmp_out = self.predictors[i - self.m + self.n_estimators](tmp_fea)
                     outs.append(tmp_out)
                 elif i==(self.m - self.n_estimators)-1:
                     for j in range(self.n_estimators):
-                        mask = self.estimators[j](fea.clone().detach())
+                        mask = self.estimators[j](fea)
                         masks.append(mask)
                         
         return outs, masks

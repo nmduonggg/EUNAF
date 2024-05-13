@@ -130,8 +130,10 @@ class EUNAF_RCAN(RCAN):
         interm_predictors = nn.ModuleList()
         for _ in range(num_blocks):
             m_tail = [
-                common.Upsampler(conv, self.scale, self.n_feats, act=False),
-                conv(self.n_feats, out_channels, self.kernel_size)
+                conv(self.n_feats, out_channels*self.scale*self.scale, self.kernel_size),
+                nn.PixelShuffle(self.scale),
+                conv(out_channels, out_channels, 1)
+                
             ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -140,7 +142,7 @@ class EUNAF_RCAN(RCAN):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n:
+            if 'predictors' not in n and 'estimators' not in n and 'tail' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")

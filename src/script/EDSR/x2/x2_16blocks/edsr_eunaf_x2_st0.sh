@@ -1,4 +1,4 @@
-python train_eunaf.py \
+python train_eunaf_no_freeze.py \
     --template EUNAF_EDSRx2_bl \
     --N 14 \
     --scale 2 \
@@ -6,11 +6,12 @@ python train_eunaf.py \
     --n_resblocks 16 \
     --n_estimators 4 \
     --max_epochs 1000 \
-    --lr 0.0001 \
+    --lr 0.00005 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
     --trainset_preload 400 \
-    --wandb \
-    # --weight './checkpoints/EUNAF_EDSRx2_bl_x2_nb8_nf64_st0/_best.t7' \
+    --weight './checkpoints/EUNAF_EDSRx2_bl_x2_nb8_nf64_st0/_best.t7' \
+    # --wandb \
+
     # --lr 0.00
     # --max_load 1000

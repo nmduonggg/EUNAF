@@ -40,7 +40,7 @@ if args.weight:
     out_dir = os.path.join(args.cv_dir, fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=True)
+    core.load_state_dict(torch.load(args.weight), strict=False)
 core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
@@ -512,6 +512,9 @@ def test():
     for m in core.modules():
         if hasattr(m, '_prepare'):
             m._prepare()
+            
+    # flops of 1 patch
+    utils.calc_flops(core, (1, 3, 32, 32))
             
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])

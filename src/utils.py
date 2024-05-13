@@ -3,8 +3,21 @@ import torch
 import cv2
 import shutil
 import numpy as np
+import pandas as pd
+import torch.nn as nn
 import scipy.stats as stats
+from collections import OrderedDict
 import torch.nn.functional as F
+
+import warnings
+from calflops import calculate_flops
+
+def calc_flops(model, size):
+    flops, macs, params = calculate_flops(model=model, 
+                                        input_shape=size,
+                                        output_as_string=True,
+                                        output_precision=4)
+    print("FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
 
 def save_args(__file__, args):
     shutil.copy(os.path.basename(__file__), args.cv_dir)
@@ -106,6 +119,154 @@ def apply_alpha_mask(foreground, background, alpha):
 
     # Return a normalized output image for display
     return outImage
+
+layer_modules = (
+    nn.Conv2d, nn.ConvTranspose2d,
+    nn.Linear,
+    nn.BatchNorm2d,
+)
+
+def summary(model, input_size, *args, **kwargs):
+    """Summarize the given input model.
+    Summarized information are 1) output shape, 2) kernel shape,
+    3) number of the parameters and 4) operations (Mult-Adds)
+    Args:
+        model (Module): Model to summarize
+        x (Tensor): Input tensor of the model with [N, C, H, W] shape
+                    dtype and device have to match to the model
+        args, kwargs: Other argument used in `model.forward` function
+    """
+    if isinstance(model, nn.DataParallel):
+        model = model.module
+
+    x = torch.zeros(input_size).to(next(model.parameters()).device)
+
+    def register_hook(module):
+        def hook(module, inputs, outputs):
+            cls_name = str(module.__class__).split(".")[-1].split("'")[0]
+            module_idx = len(summary)
+            key = None
+            for name, item in module_names.items():
+                if item == module:
+                    key = "{}_{}".format(module_idx, name)
+                    break
+            assert key
+
+            info = OrderedDict()
+            info["id"] = id(module)
+            if isinstance(outputs, (list, tuple)):
+                try:
+                    info["out"] = list(outputs[0].size())
+                except AttributeError:
+                    info["out"] = list(outputs[0].data.size())
+            else:
+                info["out"] = list(outputs.size())
+
+            info["ksize"] = "-"
+            info["inner"] = OrderedDict()
+            info["params_nt"], info["params"], info["macs"] = 0, 0, 0
+            for name, param in module.named_parameters():
+                info["params"] += param.nelement() * param.requires_grad
+                info["params_nt"] += param.nelement() * (not param.requires_grad)
+
+                if name == "weight":
+                    ksize = list(param.size())
+                    if len(ksize) > 1:
+                        ksize[0], ksize[1] = ksize[1], ksize[0]
+                    info["ksize"] = ksize
+
+                    if isinstance(module, nn.Conv2d) or isinstance(module, nn.ConvTranspose2d):
+                        assert len(inputs[0].size()) == 4 and len(inputs[0].size()) == len(outputs[0].size())+1
+
+                        in_c, in_h, in_w = inputs[0].size()[1:]
+                        k_h, k_w = module.kernel_size
+                        out_c, out_h, out_w = outputs[0].size()
+                        groups = module.groups
+                        kernel_mul = k_h * k_w * (in_c // groups)
+
+                        kernel_mul_group = kernel_mul * out_h * out_w * (out_c // groups)
+                        total_mul = kernel_mul_group * groups
+                        info["macs"] += 2 * total_mul
+
+
+                    elif isinstance(module, nn.BatchNorm2d):
+                        info["macs"] += inputs[0].size()[1]
+                    else:
+                        info["macs"] += param.nelement()
+
+                elif "weight" in name:
+                    info["inner"][name] = list(param.size())
+                    info["macs"] += param.nelement()
+
+            if list(module.named_parameters()):
+                for v in summary.values():
+                    if info["id"] == v["id"]:
+                        info["params"] = "(recursive)"
+
+            if info["params"] == 0:
+                info["params"], info["macs"] = "-", "-"
+
+            summary[key] = info
+
+        if isinstance(module, layer_modules) or not module._modules:
+            hooks.append(module.register_forward_hook(hook))
+
+
+
+    module_names = get_names_dict(model)
+
+    hooks = []
+    summary = OrderedDict()
+
+    model.apply(register_hook)
+    try:
+        with torch.no_grad():
+            model(x) if not (kwargs or args) else model(x, *args, **kwargs)
+    finally:
+        for hook in hooks:
+            hook.remove()
+    # Use pandas to align the columns
+    df = pd.DataFrame(summary).T
+
+
+    df["Mult-Adds"] = pd.to_numeric(df["macs"], errors="coerce")
+    df["Params"] = pd.to_numeric(df["params"], errors="coerce")
+    df["Non-trainable params"] = pd.to_numeric(df["params_nt"], errors="coerce")
+    df = df.rename(columns=dict(
+        ksize="Kernel Shape",
+        out="Output Shape",
+    ))
+    # with warnings.catch_warnings():
+    #     warnings.filterwarnings('ignore')
+    #     df_sum = df.sum()
+
+
+    df.index.name = "Layer"
+
+    df = df[["Kernel Shape", "Output Shape", "Params", "Mult-Adds"]]
+    max_repr_width = max([len(row) for row in df.to_string().split("\n")])
+
+    return df["Mult-Adds"], df
+
+def get_names_dict(model):
+    """Recursive walk to get names including path."""
+    names = {}
+
+    def _get_names(module, parent_name=""):
+        for key, m in module.named_children():
+            cls_name = str(m.__class__).split(".")[-1].split("'")[0]
+            num_named_children = len(list(m.named_children()))
+            if num_named_children > 0:
+                name = parent_name + "." + key if parent_name else key
+            else:
+                name = parent_name + "." + cls_name + "_"+ key if parent_name else key
+            names[name] = m
+
+            if isinstance(m, torch.nn.Module):
+                _get_names(m, parent_name=name)
+
+    _get_names(model)
+    return names
 
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):

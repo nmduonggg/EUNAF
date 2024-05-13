@@ -217,12 +217,11 @@ class EUNAF_SMSR(SMSR):
         interm_predictors = nn.ModuleList()
         for i in range(num_blocks):
             collect_feat = feat_range[i]
-            if not is_estimator:
-                m_tail = [nn.Conv2d(self.n_feats*collect_feat, self.n_feats, 3, 1, 1), nn.ReLU(True)]
-            else: m_tail = []
-            m_tail += [
-                common.Upsampler(conv, self.scale, self.n_feats, act=False),
-                conv(self.n_feats, out_channels, self.kernel_size)
+            
+            m_tail = [
+                conv(self.n_feats, out_channels*self.scale*self.scale, self.kernel_size),
+                nn.PixelShuffle(self.scale),
+                conv(out_channels, out_channels, 1)
             ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -285,15 +284,12 @@ class EUNAF_SMSR(SMSR):
                 
             else:
                 if i > (self.n_resblocks - self.n_estimators) - 1:
-                    tmp_out_fea = [t.clone().detach() for t in out_fea]
-                    tmp_out_fea = torch.cat(tmp_out_fea, dim=1)
-                    tmp_out = self.predictors[i - self.n_resblocks + self.n_estimators](tmp_out_fea)  + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
-                    
+                    tmp_out = self.predictors[i - self.n_resblocks + self.n_estimators](fea)  + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
                     outs.append(tmp_out)
                     
                 elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
                     for j in range(self.n_estimators): 
-                        mask = self.estimators[j](x.clone().detach())
+                        mask = self.estimators[j](fea)
                         mask = self.add_mean(mask)
                         masks.append(mask)  
                     
