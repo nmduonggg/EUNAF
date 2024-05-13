@@ -3,7 +3,7 @@ python train_eunaf.py \
     --N 14 \
     --scale 4 \
     --train_stage 1 \
-    --max_epochs 1000 \
+    --max_epochs 300 \
     --lr 0.0001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \

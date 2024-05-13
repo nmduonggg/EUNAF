@@ -310,7 +310,7 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
             axs[i].imshow(fout_)
             axs[i].set_title(f"p={p*100:.2f}%|b={i}|acc={round(perfs[i].item(), 4)}")
             
-            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
+            # plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
     if visualize:
         plt.savefig(save_file)
         plt.close(fig)
@@ -347,7 +347,7 @@ def visualize_fusion_map_by_errors(outs, yt, im_idx):
             p=1
             fout_ = np.clip(fout*cur_mask, 0, 1)
             
-            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_fusion_by_error.jpeg"), fout_)
+            # plt.imsave(os.path.join(out_dir, f"img_{im_idx}_fusion_by_error.jpeg"), fout_)
     
     fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
     
@@ -357,7 +357,8 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
     masks = [
-        np.stack([np.exp(pm).mean() for pm in bm], axis=0) for bm in p_masks] 
+        np.stack([
+            np.max(np.mean(np.exp(pm), axis=(0,1))) for pm in bm], axis=0) for bm in p_masks] 
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
@@ -382,6 +383,109 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     classified_map = [processed_outs[i,...] for i in range(processed_outs.shape[0])]
     
     return classified_map
+
+def visualize_edge_map(patches, im_idx, scale):
+    
+    # masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks]
+    # masks = [torch.log(m) for m in masks]
+    patches = [(p*255).astype(np.uint8) for p in patches]   # PxHxWxC
+    patches = [cv2.resize(img, [img.shape[1] * scale, img.shape[0] * scale], interpolation=cv2.INTER_CUBIC)
+            for img in patches]
+    patches_np = np.array(patches)
+    imscores = np.array([utils.laplacian(p).mean() for p in patches])   # P
+    
+    q1, q2 = np.percentile(imscores, [40, 70])
+    
+    p0 = (imscores < q1).astype(int)
+    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
+    p2 = (q2 <= imscores).astype(int)
+    
+    per_class = [p0, p1, p2]
+    class_colors = [
+        [19, 239, 85],
+        [235, 255, 128],
+        [255, 0, 0]
+    ]
+
+    out_patches = 0
+    for i, class_mask in enumerate(per_class):
+        color = class_colors[i]
+        color_np = np.ones_like(patches_np) * np.array(color).reshape(1, 1, 1, -1)/255
+        color_np[:, :1, :, :] = 0
+        color_np[:, -1:, :, :] = 0
+        color_np[:, :, :1, :] = 0
+        color_np[:, :, -1:, :] = 0
+        out_patches += color_np * class_mask.reshape(-1, 1, 1, 1)
+    
+    out_patches = [out_patches[i, :, :, :] for i in range(len(patches))]
+    return out_patches
+def visualize_last_unc_map(patches, im_idx, last_unc):
+    
+    # masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks]
+    # masks = [torch.log(m) for m in masks]
+    patches = [(p*255).astype(np.uint8) for p in patches]   # PxHxWxC
+    patches_np = np.array(patches)
+    imscores = np.array([u.mean() for u in last_unc])
+    
+    q1, q2 = np.percentile(imscores, [40, 70])
+    
+    p0 = (imscores < q1).astype(int)
+    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
+    p2 = (q2 <= imscores).astype(int)
+    
+    per_class = [p0, p1, p2]
+    class_colors = [
+        [19, 239, 85],
+        [235, 255, 128],
+        [255, 0, 0]
+    ]
+
+    out_patches = 0
+    for i, class_mask in enumerate(per_class):
+        color = class_colors[i]
+        color_np = np.ones_like(patches_np) * np.array(color).reshape(1, 1, 1, -1)/255
+        color_np[:, :1, :, :] = 0
+        color_np[:, -1:, :, :] = 0
+        color_np[:, :, :1, :] = 0
+        color_np[:, :, -1:, :] = 0
+        out_patches += color_np * class_mask.reshape(-1, 1, 1, 1)
+    
+    out_patches = [out_patches[i, :, :, :] for i in range(len(patches))]
+    return out_patches
+
+def visualize_last_psnr_map(patches, im_idx, psnrs):
+    
+    # masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks]
+    # masks = [torch.log(m) for m in masks]
+    patches = [(p*255).astype(np.uint8) for p in patches]   # PxHxWxC
+    patches_np = np.array(patches)
+    imscores = np.array([u.mean() for u in psnrs])
+    
+    q1, q2 = np.percentile(imscores, [30, 60])
+    
+    p0 = (imscores < q1).astype(int)
+    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
+    p2 = (q2 <= imscores).astype(int)
+    
+    per_class = [p0, p1, p2]
+    class_colors = [
+        [255, 0, 0],
+        [235, 255, 128],
+        [19, 239, 85]
+    ]
+
+    out_patches = 0
+    for i, class_mask in enumerate(per_class):
+        color = class_colors[i]
+        color_np = np.ones_like(patches_np) * np.array(color).reshape(1, 1, 1, -1)/255
+        color_np[:, :1, :, :] = 0
+        color_np[:, -1:, :, :] = 0
+        color_np[:, :, :1, :] = 0
+        color_np[:, :, -1:, :] = 0
+        out_patches += color_np * class_mask.reshape(-1, 1, 1, 1)
+    
+    out_patches = [out_patches[i, :, :, :] for i in range(len(patches))]
+    return out_patches
         
 # testing
 
@@ -391,7 +495,8 @@ num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(args.n_estimators, num_blocks)
 
 patch_size = 32
-step = 28
+step = 32
+alpha = 0.7
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -414,25 +519,38 @@ def test():
         # x  = x.cuda()
         # yt = yt.cuda()
         
-        yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
+        # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         # yt = utils.modcrop(yt)
+        
         
         # cut patches
         x_np = x.permute(0,2,3,1).squeeze(0).numpy()
         lr_list, num_h, num_w, h, w = utils.crop_cpu(x_np, patch_size, step)
         yt = yt[:, :, :h*args.scale, :w*args.scale]
+        y_np = yt.permute(0,2,3,1).squeeze(0).numpy()
+        hr_list = utils.crop_cpu(y_np, patch_size * args.scale, step*args.scale)[0]
+        
+        
         
         combine_img_lists = [list() for _ in range(num_blocks)]
         combine_unc_lists = [list() for _ in range(num_blocks)]
-        for lr_img in lr_list:
+        all_last_psnrs = list()
+        for lr_img, hr_img in zip(lr_list, hr_list):
             img = lr_img.astype(np.float32) 
             img = img[:, :, :3]
             img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).cuda()
+            
+            gt = hr_img.astype(np.float32) 
+            gt = gt[:, :, :3]
+            gt = torch.from_numpy(gt).permute(2,0,1).unsqueeze(0).cuda()
         
             with torch.no_grad():
                 out = core.eunaf_forward(img)
             
             p_yfs, p_masks = out
+            cur_psnr = evaluation.calculate(args, p_yfs[-1], gt)
+            all_last_psnrs.append(cur_psnr)
+            
             for i in range(len(p_yfs)):
                 combine_img_lists[i].append(p_yfs[i].cpu().squeeze(0).permute(1,2,0).numpy())
                 combine_unc_lists[i].append(p_masks[i].cpu().squeeze(0).permute(1,2,0).numpy())
@@ -472,12 +590,33 @@ def test():
         
         
         if args.visualize:
-            classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
-            classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            # classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+            # classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            # yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            # masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
+            
+            edge_patch_map = visualize_edge_map(lr_list, batch_idx, args.scale)
+            edge_map = utils.combine(edge_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_patch.jpeg"), edge_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt = utils.apply_alpha_mask(yt_image, classified_map, 0.5)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
+            masked_yt_edge = utils.apply_alpha_mask(yt_image, edge_map, alpha)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_alpha_masked.jpeg"), masked_yt_edge)
+            
+            unc_patch_map = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
+            unc_map = utils.combine(unc_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_patch.jpeg"), unc_map)
+            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            masked_yt_unc = utils.apply_alpha_mask(yt_image, unc_map, alpha)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_alpha_masked.jpeg"), masked_yt_unc)
+            
+            psnr_patch_map = visualize_last_psnr_map(combine_img_lists[-1], batch_idx, all_last_psnrs)
+            psnr_map = utils.combine(psnr_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_patch.jpeg"), psnr_map)
+            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            masked_yt_psnr = utils.apply_alpha_mask(yt_image, psnr_map, alpha)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_alpha_masked.jpeg"), masked_yt_psnr)
             
         for i, p in enumerate(psnr_v_layers):
             psnrs_val[i] = psnrs_val[i] + p

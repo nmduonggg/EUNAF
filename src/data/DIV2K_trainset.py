@@ -8,7 +8,7 @@ class DIV2K_trainset(Dataset):
     def __init__(self, root, max_load=800, lr_patch_size=21, scale=2, style='RGB', preload=0, rgb_range=1.0):
         super(DIV2K_trainset, self).__init__()
         self.root = root
-        self.repeat = 20
+        self.repeat = 40
         if max_load > 0:
             self.N_raw_image = min(max_load, 800) #1-800
         else:

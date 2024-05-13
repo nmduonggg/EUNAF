@@ -8,5 +8,6 @@ python test_eunaf_by_patches.py \
     --n_estimators 4 \
     --scale 4 \
     --eval_tag ssim \
-    --rgb_channel
+    --rgb_channel \
+    --wandb \
     # --visualize

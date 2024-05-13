@@ -62,12 +62,12 @@ num_blocks = min(num_blocks // 2, args.n_estimators)
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
-early_stopper = utils.EarlyStopper(patience=10)
+early_stopper = utils.EarlyStopper(patience=25)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
-fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
-    else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
+fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
+    else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
 out_dir = os.path.join(args.cv_dir, fname)
 os.makedirs(out_dir, exist_ok=True)
 print("Load ckpoint to: ", out_dir)
