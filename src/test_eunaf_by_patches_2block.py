@@ -475,19 +475,17 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2, q3 = np.percentile(imscores, [30, 50, 70])
+    q1, = np.percentile(imscores, [80])
     
     p0 = (imscores < q1).astype(int)
-    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
-    p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)
-    p3 = (q3 <= imscores).astype(int)
+    p1 = (q1 <= imscores).astype(int)
     class_colors = [
         [0, 0, 255],
         [19, 239, 85],
         [235, 255, 128],
         [255, 0, 0]
     ]
-    per_class = [p0, p1, p2, p3]
+    per_class = [p0, p1]
     out_patches = 0
     for i, class_mask in enumerate(per_class):
         color = class_colors[i]
@@ -589,6 +587,7 @@ def test():
         
         # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         # yt = utils.modcrop(yt)
+        
         
         # cut patches
         x_np = x.permute(0,2,3,1).squeeze(0).numpy()

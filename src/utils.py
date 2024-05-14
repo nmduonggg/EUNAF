@@ -16,6 +16,7 @@ def calc_flops(model, size):
     flops, macs, params = calculate_flops(model=model, 
                                         input_shape=size,
                                         output_as_string=True,
+                                        print_detailed=True,
                                         output_precision=4)
     print("FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
 

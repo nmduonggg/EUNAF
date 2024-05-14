@@ -1,10 +1,10 @@
-python train_eunaf_no_freeze.py \
+python train_eunaf_no_freeze_2block.py \
     --template EUNAF_FSRCNNxN \
     --N 14 \
     --scale 4 \
     --train_stage 1 \
     --max_epochs 600 \
-    --lr 0.0002 \
+    --lr 0.0001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
     --n_estimators 4 \

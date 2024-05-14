@@ -103,7 +103,7 @@ def set_template(args):
         print('[INFO] Template found (EUNAF SRResNet SR)')
         args.lr_decay_ratio=0.5
         args.weight_decay=0
-        args.batch_size=32
+        args.batch_size=16
         args.epoch_step=30
         args.val_each=1
         args.loss='L1'
@@ -111,7 +111,7 @@ def set_template(args):
         args.trainset_tag='DIV2K'
         args.trainset_patch_size=32
         args.trainset_dir='../../data/DIV2K/'
-        args.rgb_range=1.0
+        args.rgb_range=255.0
         args.core='EUNAF_SRResNet'
         args.n_resblocks = 16
         args.reduction=16
@@ -123,7 +123,7 @@ def set_template(args):
         print('[INFO] Template found (EUNAF FSRCNN SR)')
         args.lr_decay_ratio=0.5
         args.weight_decay=0
-        args.batch_size=32
+        args.batch_size=16
         args.epoch_step=30
         args.val_each=1
         args.loss='L1'
@@ -131,7 +131,7 @@ def set_template(args):
         args.trainset_tag='DIV2K'
         args.trainset_patch_size=32
         args.trainset_dir='../../data/DIV2K/'
-        args.rgb_range=1.0
+        args.rgb_range=255.0
         args.core='EUNAF_FSRCNN'
         args.n_resblocks = 4
         args.reduction=16

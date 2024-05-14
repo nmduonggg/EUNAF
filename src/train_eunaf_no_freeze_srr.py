@@ -51,7 +51,7 @@ if args.weight:
     #     args.weight = os.path.join(out_dir, '_best.t7')
     #     print(f"[INFO] Load weight from {args.weight}")
     #     core.load_state_dict(torch.load(args.weight), strict=False)
-    args.weight = './checkpoints/PRETRAINED/FSRCNN/FSRCNN_branch3.pth'
+    args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
     core.load_state_dict(torch.load(args.weight), strict=False)
     print(f"[INFO] Load weight from {args.weight}")
     
@@ -118,9 +118,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
         esu = esu + 2*mask_.mean()
         
         esu = esu + l1_loss
-        
-    esu *= 1/len(yfs)
-        
+    esu = esu * 1/len(yfs)
     return esu
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
@@ -190,6 +188,7 @@ def get_fusion_map_last(outs, masks, rates=[]):
         per_class.append(p)
         
     processed_outs = list()
+
     for i in range(len(outs) + 1):
         if i<len(outs):
             fout = outs[i]
@@ -208,7 +207,7 @@ def get_fusion_map_last(outs, masks, rates=[]):
 def loss_alignment_2(yfs, masks, yt):
     
     all_rates = [
-        [40]
+        [50, 70, 80]
     ]
     aln_loss = 0.0
     for rate in all_rates:

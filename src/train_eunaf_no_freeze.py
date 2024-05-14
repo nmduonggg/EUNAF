@@ -102,6 +102,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
     
     for i in range(len(yfs)):
         yf = yfs[i]
+        # esu += loss_func(yf, yt) 
         if freeze_mask:
             mask_ = masks[i].clone().detach()
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
@@ -116,7 +117,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
         l1_loss = loss_func(yf, yt)
         
         esu = esu + l1_loss
-        
+    esu = esu *  1/len(yfs)
     return esu
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
