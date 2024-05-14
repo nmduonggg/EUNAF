@@ -1,4 +1,4 @@
-python train_eunaf.py \
+python train_eunaf_no_freeze.py \
     --template EUNAF_EDSRx2_bl \
     --N 14 \
     --scale 2 \

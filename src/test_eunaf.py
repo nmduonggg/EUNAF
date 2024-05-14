@@ -37,7 +37,7 @@ core = supernet.config(args)
 if args.weight:
     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, fname)
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight), strict=True)
@@ -145,7 +145,7 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
     
     # masks_np = process_unc_map(masks, False, False, False)
     # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
-    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=True, abs=True)
+    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=False)
     if im:
         masks_np_percentile = process_unc_map(masks, to_heatmap=False, abs=False, rescale=False)
     
@@ -348,6 +348,65 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
     
     return fout, percent
 
+def visualize_fusion_map_last(outs, masks, im_idx, perfs=[], visualize=False, align_biases=None):
+    
+    save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
+    # for m in masks:
+    #     print(m.max(), m.min())
+    masks = [torch.mean(torch.exp(m), dim=1) for i, m in enumerate(masks)]
+    mask = masks[-1].permute(1,2,0).cpu()
+    # masks[-1] *= 1.08
+    # masks[-1] *= torch.mean(masks[0], dim=[2,3], keepdim=True) / torch.mean(masks[-1], dim=[2,3], keepdim=True)
+    # new_masks = list()
+    # for i in range(len(masks)):
+    #     tmp_mask = masks[i]
+    #     tmp_mask = (tmp_mask - torch.mean(tmp_mask, dim=[2,3], keepdim=True)) / torch.std(tmp_mask, dim=[2,3], keepdim=True)
+    #     new_masks.append(tmp_mask)
+    # masks = new_masks
+    
+    imscores = mask.numpy()
+    q1, q2, q3 = np.percentile(imscores, [10, 30, 60])
+    p0 = (imscores < q1).astype(int)
+    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
+    p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)
+    p3 = (q3 <= imscores).astype(int)
+    
+    filter_outs = process_unc_map(outs, to_heatmap=False, abs=False, rescale=False)
+    processed_outs = list()
+    percent = np.zeros(shape=[len(filter_outs)])
+
+    per_class = [p0, p1, p2, p3]
+
+    if visualize: fig, axs = plt.subplots(ncols=len(filter_outs)+1, nrows=1, figsize=(20, 4))
+    for i in range(len(filter_outs) + 1):
+        if i<len(filter_outs):
+            fout = filter_outs[i]
+            p = per_class[i].mean()
+            percent[i] = p
+            cur_mask = per_class[i]
+            
+            cur_fout = fout*cur_mask
+            processed_outs.append(fout * cur_mask)
+        else:
+            # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
+            fout = np.sum(np.stack(processed_outs, axis=0), axis=0)
+            cur_mask = np.ones_like(fout).astype(np.uint8)
+            p=1
+        if visualize:
+            fout_ = np.clip(fout*cur_mask, 0, 1)
+            axs[i].imshow(fout_)
+            axs[i].set_title(f"p={p*100:.2f}%|b={i}|acc={round(perfs[i].item(), 4)}")
+            
+            plt.imsave(os.path.join(out_dir, f"img_{im_idx}_b{i}_fusion.jpeg"), fout_)
+    if visualize:
+        plt.savefig(save_file)
+        plt.close(fig)
+        plt.show()
+    
+    fout = torch.tensor(fout).permute(2,0,1).unsqueeze(0).float()
+    
+    return fout, percent
+
 def visualize_fusion_map_by_errors(outs, yt, im_idx):
     
     errors = [torch.mean(torch.abs(out-outs[-1]), dim=1, keepdims=True) for out in outs]
@@ -455,7 +514,7 @@ def test():
             # out = core(x)
         
         yfs, masks = out
-        yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
+        yf_fuse, percent = visualize_fusion_map_last(yfs, masks, batch_idx)
         yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
         yf_fuse_by_err = yf_fuse_by_err.cuda()
         yf_fuse = yf_fuse.cuda()
@@ -487,7 +546,7 @@ def test():
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        visualize_fusion_map_last(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         visualize_classified_map(yfs, masks, batch_idx)
         
         if args.visualize:

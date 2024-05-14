@@ -44,7 +44,7 @@ class FSRCNN(nn.Module):
 class EUNAF_FSRCNN(FSRCNN):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_FSRCNN, self).__init__(args, conv=conv)
-        self.n_estimators = min(args.n_estimators, self.m // 2)
+        self.n_estimators = min(args.n_estimators, self.m//2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
 

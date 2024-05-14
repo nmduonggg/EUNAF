@@ -268,6 +268,12 @@ def get_names_dict(model):
     _get_names(model)
     return names
 
+def laplacian(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
+    mask_img = cv2.convertScaleAbs(laplac)
+    return mask_img
+
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):
         self.base_lr = base_lr

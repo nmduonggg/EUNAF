@@ -37,7 +37,7 @@ core = supernet.config(args)
 if args.weight:
     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, fname)
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight), strict=False)
@@ -358,7 +358,8 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
     masks = [
         np.stack([
-            np.max(np.mean(np.exp(pm), axis=(0,1))) for pm in bm], axis=0) for bm in p_masks] 
+            np.mean(pm) for pm in bm], axis=0) for bm in p_masks] 
+    # masks[-1] *= 1.1
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
@@ -374,6 +375,10 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
 
     for i in range(len(p_masks) ):
         fout = np.ones_like(yfs[i]) * np.array(class_colors[i])/255.0
+        fout[:, :1, :, :] = 0
+        fout[:, -1:, :, :] = 0
+        fout[:, :, :1, :] = 0
+        fout[:, :, -1:, :] = 0
         cur_mask = onehot_indices[..., i].numpy().astype(np.uint8)
         cur_mask = cur_mask.reshape(-1, 1, 1, 1)
         
@@ -593,12 +598,12 @@ def test():
         
         
         if args.visualize:
-            # classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
-            # classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
-            # yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            # masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
-            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
+            classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+            classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
+            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
             
             edge_patch_map = visualize_edge_map(lr_list, batch_idx, args.scale)
             edge_map = utils.combine(edge_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)

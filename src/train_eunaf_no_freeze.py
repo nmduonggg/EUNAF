@@ -4,6 +4,7 @@ Train EUNAF-version of backbone SISR network
 
 import os
 import torch
+import numpy as np
 import torch.utils.data as torchdata
 import torch.nn.functional as F
 import tqdm
@@ -43,9 +44,9 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
-        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st2'
-    out_dir = os.path.join(args.cv_dir, fname)
+    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
+        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     if os.path.exists(out_dir):
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
@@ -157,6 +158,63 @@ def rescale_masks(masks):
         new_masks.append(m)
     
     return new_masks
+
+def get_fusion_map_last(outs, masks, rates=[]):
+    
+    masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for i, m in enumerate(masks)]
+    mask = masks[-1].clone().detach().cpu()    # B, C, H, W
+    bs, _, h, w = mask.shape
+    
+    quantile_class = list()
+    for r in rates:
+        if r > 1: r /= 100
+        tmp_mask = mask.squeeze(1).reshape(bs, -1)  # bx(hw)
+        q = torch.quantile(tmp_mask, r, dim=1, keepdim=True)
+        q = q.reshape(bs, 1, 1, 1)
+        quantile_class.append(q)
+    
+    per_class = list()
+    for i in range(len(quantile_class)+1):
+        q = quantile_class[i] if i<len(quantile_class) else quantile_class[i-1]
+        q = torch.ones_like(mask) * q
+        if i==0:
+            p = (mask < q).float()
+        elif i==len(quantile_class):
+            p = (q <= mask).float()
+        else:
+            p = (torch.logical_and(quantile_class[i-1] <= mask, mask < q)).float()
+        per_class.append(p)
+        
+    processed_outs = list()
+
+    for i in range(len(outs) + 1):
+        if i<len(outs):
+            fout = outs[i]
+            cur_mask = per_class[i].to(fout.device)
+            cur_fout = fout*cur_mask
+            processed_outs.append(fout * cur_mask)
+            
+        else:
+            # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
+            fout = torch.sum(torch.stack(processed_outs, dim=0), dim=0)
+    
+    fout = fout.float()
+    
+    return fout
+
+def loss_alignment_2(yfs, masks, yt):
+    
+    all_rates = [
+        [50, 70, 80]
+    ]
+    aln_loss = 0.0
+    for rate in all_rates:
+        fused_out = get_fusion_map_last(yfs, masks, rates=rate)
+        aln_loss += loss_func(fused_out, yt)
+    aln_loss = aln_loss / len(all_rates)
+    aln_loss += loss_func(yfs[-1], yt)*0.2
+    
+    return aln_loss, fused_out
         
 
 # training
@@ -206,7 +264,7 @@ def train():
                     val_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
                 elif args.train_stage==2:
                     # align_biases = core.align_biases
-                    val_loss, val_fused = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
+                    val_loss, val_fused = loss_alignment_2(outs_mean, masks, yt)
                     perf_fused += evaluation.calculate(args, val_fused, yt)
                     
                 total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
@@ -281,7 +339,8 @@ def train():
                 train_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
             else:
                 # align_biases = core.align_biases
-                train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
+                # train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
+                train_loss, _ = loss_alignment_2(outs_mean, masks, yt)
             
             
             optimizer.zero_grad()
