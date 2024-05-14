@@ -277,6 +277,49 @@ def visualize_error_map(yfs, yt, id):
     plt.close(fig)
     plt.show()
     
+def get_fusion_map_last(outs, masks, rates=[]):
+    
+    masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for i, m in enumerate(masks)]
+    mask = masks[-1].clone().detach().cpu()    # B, C, H, W
+    bs, _, h, w = mask.shape
+    
+    quantile_class = list()
+    for r in rates:
+        if r > 1: r /= 100
+        tmp_mask = mask.squeeze(1).reshape(bs, -1)  # bx(hw)
+        q = torch.quantile(tmp_mask, r, dim=1, keepdim=True)
+        q = q.reshape(bs, 1, 1, 1)
+        quantile_class.append(q)
+    
+    per_class = list()
+    for i in range(len(quantile_class)+1):
+        q = quantile_class[i] if i<len(quantile_class) else quantile_class[i-1]
+        q = torch.ones_like(mask) * q
+        if i==0:
+            p = (mask < q).float()
+        elif i==len(quantile_class):
+            p = (q <= mask).float()
+        else:
+            p = (torch.logical_and(quantile_class[i-1] <= mask, mask < q)).float()
+        per_class.append(p)
+        
+    processed_outs = list()
+
+    for i in range(len(outs) + 1):
+        if i<len(outs):
+            fout = outs[i]
+            cur_mask = per_class[i].to(fout.device)
+            cur_fout = fout*cur_mask
+            processed_outs.append(fout * cur_mask)
+            
+        else:
+            # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
+            fout = torch.sum(torch.stack(processed_outs, dim=0), dim=0)
+    
+    fout = fout.float()
+    
+    return fout
+    
 def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_biases=None):
     
     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
@@ -432,7 +475,7 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2, q3 = np.percentile(imscores, [10, 20, 40])
+    q1, q2, q3 = np.percentile(imscores, [99, 99, 99])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
@@ -589,16 +632,16 @@ def test():
                 torch.from_numpy(utils.combine(combine_unc_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
             
         yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
-        yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
+        # yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
         
         percent_total += percent
-        percent_total_err += percent_err
+        # percent_total_err += percent_err
         cur_psnr_fuse, cur_ssim_fuse = evaluation.calculate_all(args, yf_fuse, yt)
-        cur_psnr_fuse_err, cur_ssim_fuse_err = evaluation.calculate_all(args, yf_fuse_by_err, yt)
+        # cur_psnr_fuse_err, cur_ssim_fuse_err = evaluation.calculate_all(args, yf_fuse_by_err, yt)
         psnr_fuse += cur_psnr_fuse
         ssim_fuse += cur_ssim_fuse
-        psnr_fuse_err += cur_psnr_fuse_err
-        ssim_fuse_err += cur_ssim_fuse_err
+        # psnr_fuse_err += cur_psnr_fuse_err
+        # ssim_fuse_err += cur_ssim_fuse_err
         
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / num_blocks
             
@@ -610,9 +653,10 @@ def test():
             ssim_v_layers.append(v[1])
         
         unc_v_layers = [m.mean().cpu().item() for m in masks]
-        error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
+        # error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        if args.visualize:
+            visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         
         unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
         fused_yf_unc_patches = fuse_by_last_unc_by_patches(combine_img_lists, batch_idx, unc_patch_indices)
@@ -659,12 +703,12 @@ def test():
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
     ssims_val = [p / len(XYtest) for p in ssims_val]
     percent_total = percent_total / len(XYtest)
-    percent_total_err /= len(XYtest)
+    # percent_total_err /= len(XYtest)
     psnr_fuse = psnr_fuse / len(XYtest)
     ssim_fuse = ssim_fuse / len(XYtest)
     
-    psnr_fuse_err /= len(XYtest) 
-    ssim_fuse_err /= len(XYtest)
+    # psnr_fuse_err /= len(XYtest) 
+    # ssim_fuse_err /= len(XYtest)
     
     psnr_fuse_unc /= len(XYtest)
     ssim_fuse_unc /= len(XYtest)
@@ -672,19 +716,19 @@ def test():
     print(*psnrs_val, psnr_fuse)
     print(*ssims_val, ssim_fuse)
     
-    print("error psnr: ", psnr_fuse_err)
-    print("error ssim: ", ssim_fuse_err)
+    # print("error psnr: ", psnr_fuse_err)
+    # print("error ssim: ", ssim_fuse_err)
     
     print("unc psnr: ", psnr_fuse_unc)
     print("unc ssim: ", ssim_fuse_unc)
     
     percent_total = percent_total.tolist()
-    percent_total_err = percent_total_err.tolist()
+    # percent_total_err = percent_total_err.tolist()
     for perc in percent_total:
         print( f"{(perc*100):.3f}", end=' ')
     print()
-    for perc in percent_total_err:
-        print( f"{(perc*100):.3f}", end=' ')
+    # for perc in percent_total_err:
+    #     print( f"{(perc*100):.3f}", end=' ')
     
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
     total_val_loss /= len(XYtest)

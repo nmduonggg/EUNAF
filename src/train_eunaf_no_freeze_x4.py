@@ -205,7 +205,7 @@ def get_fusion_map_last(outs, masks, rates=[]):
 def loss_alignment_2(yfs, masks, yt):
     
     all_rates = [
-        [50, 70, 80]
+        [10, 20, 40]
     ]
     aln_loss = 0.0
     for rate in all_rates:

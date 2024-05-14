@@ -113,17 +113,29 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def forward(self, x):
         fea = self.lrelu(self.head(x))
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        
+        outs = list() 
+        masks = list()
         
         for i in range(self.nb):
-            out = self.body[i](fea) if i == 0 else self.body[i](out) 
-
-        out = self.tail(out)
-        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
-        out += base
-        
-        outs = [torch.zeros_like(out) for _ in range(self.n_estimators-1)] + [out]
-        masks = [torch.zeros_like(out) for _ in range(self.n_estimators)]
-        
+            fea = self.body[i](fea) 
+            
+            if i==self.nb - 1:
+                out = self.tail(fea)
+                out += base
+                outs.append(out)
+                
+            else:
+                if i > (self.nb - self.n_estimators)-1 :
+                    tmp_fea = fea.clone().detach() 
+                    tmp_out = self.predictors[i - self.nb + self.n_estimators](tmp_fea)
+                    outs.append(tmp_out + base)
+                elif i==(self.nb - self.n_estimators)-1 :
+                    for j in range(self.n_estimators):
+                        mask = self.estimators[j](fea.clone().detach())
+                        masks.append(mask)
+                        
         return outs, masks
     
     def eunaf_forward(self, x):
