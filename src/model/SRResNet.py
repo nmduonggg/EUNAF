@@ -82,7 +82,7 @@ class EUNAF_MSRResNet(MSRResNet):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
-        self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
+        self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=True)
         self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
             
     def get_n_estimators(self):
@@ -95,11 +95,11 @@ class EUNAF_MSRResNet(MSRResNet):
         for _ in range(num_blocks):
             m_tail = [
                 conv(self.nf, out_channels*self.upscale*self.upscale, self.kernel_size),
-                nn.PixelShuffle(self.upscale),
+                nn.PixelShuffle(self.upscale), nn.LeakyReLU(0.1, True),
                 conv(out_channels, out_channels, 1)
                 
             ]
-            if last_act: m_tail.append(nn.ELU())
+            if last_act: m_tail.append(nn.LeakyReLU())
             interm_predictors.append(nn.Sequential(*m_tail))
             
         return interm_predictors
@@ -128,12 +128,12 @@ class EUNAF_MSRResNet(MSRResNet):
                 
             else:
                 if i > (self.nb - self.n_estimators)-1 :
-                    tmp_fea = fea.clone().detach() 
+                    tmp_fea = fea
                     tmp_out = self.predictors[i - self.nb + self.n_estimators](tmp_fea)
                     outs.append(tmp_out + base)
                 elif i==(self.nb - self.n_estimators)-1 :
                     for j in range(self.n_estimators):
-                        mask = self.estimators[j](fea.clone().detach())
+                        mask = self.estimators[j](fea)
                         masks.append(mask)
                         
         return outs, masks
@@ -155,12 +155,12 @@ class EUNAF_MSRResNet(MSRResNet):
                 
             else:
                 if i > (self.nb - self.n_estimators)-1 :
-                    tmp_fea = fea.clone().detach() 
+                    tmp_fea = fea
                     tmp_out = self.predictors[i - self.nb + self.n_estimators](tmp_fea)
                     outs.append(tmp_out + base)
                 elif i==(self.nb - self.n_estimators)-1 :
                     for j in range(self.n_estimators):
-                        mask = self.estimators[j](fea.clone().detach())
+                        mask = self.estimators[j](fea)
                         masks.append(mask)
                         
         return outs, masks
