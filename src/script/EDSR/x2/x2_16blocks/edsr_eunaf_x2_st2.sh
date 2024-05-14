@@ -9,7 +9,7 @@ python train_eunaf_no_freeze.py \
     --lr 0.00001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
-    --trainset_preload 400 \
+    --trainset_preload 200 \
     --weight './checkpoints/EUNAF_EDSRx2_bl_x2_nb16_nf64_st1/_best.t7' \
     # --wandb \
     # --lr 0.00

@@ -365,7 +365,7 @@ def visualize_fusion_map_last(outs, masks, im_idx, perfs=[], visualize=False, al
     # masks = new_masks
     
     imscores = mask.numpy()
-    q1, q2, q3 = np.percentile(imscores, [10, 30, 60])
+    q1, q2, q3 = np.percentile(imscores, [10, 20, 50])
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
     p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)

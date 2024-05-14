@@ -29,7 +29,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=8)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -63,7 +63,7 @@ num_blocks = min(num_blocks // 2, args.n_estimators)
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
-early_stopper = utils.EarlyStopper(patience=25)
+early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
 
 # working dir
@@ -212,7 +212,6 @@ def loss_alignment_2(yfs, masks, yt):
         fused_out = get_fusion_map_last(yfs, masks, rates=rate)
         aln_loss += loss_func(fused_out, yt)
     aln_loss = aln_loss / len(all_rates)
-    aln_loss += loss_func(yfs[-1], yt)*0.2
     
     return aln_loss, fused_out
         

@@ -47,7 +47,7 @@ loss_func = loss.create_loss_func(args.loss)
 
 # working dir
 # out_dir = os.path.join(args.analyze_dir, args.template, name+f'_nblock{args.nblocks}', args.testset_tag)
-out_dir = os.path.join(args.analyze_dir, name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}', args.testset_tag)
+out_dir = os.path.join(args.analyze_dir, "by_patches", name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}', args.testset_tag)
 print('Load to: ', out_dir)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
@@ -372,7 +372,6 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
         [235, 255, 128],
         [255, 0, 0]
     ]
-
     for i in range(len(p_masks) ):
         fout = np.ones_like(yfs[i]) * np.array(class_colors[i])/255.0
         fout[:, :1, :, :] = 0
@@ -399,20 +398,21 @@ def visualize_edge_map(patches, im_idx, scale):
     patches_np = np.array(patches)
     imscores = np.array([utils.laplacian(p).mean() for p in patches])   # P
     
-    q1, q2 = np.percentile(imscores, [40, 70])
+    q1, q2, q3 = np.percentile(imscores, [10, 30, 50])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
-    p2 = (q2 <= imscores).astype(int)
-    
-    per_class = [p0, p1, p2]
+    p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)
+    p3 = (q3 <= imscores).astype(int)
     class_colors = [
+        [0, 0, 255],
         [19, 239, 85],
         [235, 255, 128],
         [255, 0, 0]
     ]
 
     out_patches = 0
+    per_class = [p0, p1, p2, p3]
     for i, class_mask in enumerate(per_class):
         color = class_colors[i]
         color_np = np.ones_like(patches_np) * np.array(color).reshape(1, 1, 1, -1)/255
@@ -432,19 +432,19 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2 = np.percentile(imscores, [40, 70])
+    q1, q2, q3 = np.percentile(imscores, [10, 20, 40])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
-    p2 = (q2 <= imscores).astype(int)
-    
-    per_class = [p0, p1, p2]
+    p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)
+    p3 = (q3 <= imscores).astype(int)
     class_colors = [
+        [0, 0, 255],
         [19, 239, 85],
         [235, 255, 128],
         [255, 0, 0]
     ]
-
+    per_class = [p0, p1, p2, p3]
     out_patches = 0
     for i, class_mask in enumerate(per_class):
         color = class_colors[i]
@@ -456,7 +456,21 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
         out_patches += color_np * class_mask.reshape(-1, 1, 1, 1)
     
     out_patches = [out_patches[i, :, :, :] for i in range(len(patches))]
-    return out_patches
+    return out_patches, per_class
+
+def fuse_by_last_unc_by_patches(all_levels, im_idx, patch_indices):
+    all_level_patches = list()
+    for patches in all_levels:
+        patches_np = np.array(patches)
+        all_level_patches.append(patches_np)
+        
+    fusion_final = 0
+    for i, pid in enumerate(patch_indices):
+        fuse_pid = pid.reshape(-1, 1, 1, 1) * all_level_patches[i]
+        fusion_final += fuse_pid
+    fusion_final = [fusion_final[i,:,:,:] for i in range(len(patches))]
+    return fusion_final
+        
 
 def visualize_last_psnr_map(patches, im_idx, psnrs):
     
@@ -466,17 +480,19 @@ def visualize_last_psnr_map(patches, im_idx, psnrs):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in psnrs])
     
-    q1, q2 = np.percentile(imscores, [30, 60])
+    q1, q2, q3 = np.percentile(imscores, [60, 80, 90])
     
-    p0 = (imscores < q1).astype(int)
-    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
-    p2 = (q2 <= imscores).astype(int)
+    p0 = (imscores <= q1).astype(int)
+    p1 = (np.logical_and(q1 < imscores, imscores <= q2)).astype(int)
+    p2 = (np.logical_and(q2 < imscores, imscores <= q3)).astype(int)
+    p3 = (q3 < imscores).astype(int)
     
-    per_class = [p0, p1, p2]
+    per_class = [p0, p1, p2, p3]
     class_colors = [
         [255, 0, 0],
         [235, 255, 128],
-        [19, 239, 85]
+        [19, 239, 85],
+        [0, 0, 255]
     ]
 
     out_patches = 0
@@ -500,7 +516,7 @@ num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(args.n_estimators, num_blocks)
 
 patch_size = 32
-step = 32
+step = 28
 alpha = 0.7
 
 def test():
@@ -511,6 +527,7 @@ def test():
     total_mask_loss = 0.0
     psnr_fuse, ssim_fuse = 0.0, 0.0
     psnr_fuse_err, ssim_fuse_err = 0.0, 0.0
+    psnr_fuse_unc, ssim_fuse_unc = 0.0, 0.0
     
     #walk through the test set
     core.eval()
@@ -527,7 +544,7 @@ def test():
         # x  = x.cuda()
         # yt = yt.cuda()
         
-        # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
+        yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         # yt = utils.modcrop(yt)
         
         
@@ -538,6 +555,7 @@ def test():
         y_np = yt.permute(0,2,3,1).squeeze(0).numpy()
         hr_list = utils.crop_cpu(y_np, patch_size * args.scale, step*args.scale)[0]
         
+        # yt = yt[:, :, :h*args.scale, :w*args.scale]
         
         
         combine_img_lists = [list() for _ in range(num_blocks)]
@@ -596,32 +614,38 @@ def test():
         
         visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         
+        unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
+        fused_yf_unc_patches = fuse_by_last_unc_by_patches(combine_img_lists, batch_idx, unc_patch_indices)
+        fused_yf_tensor = torch.from_numpy(utils.combine(fused_yf_unc_patches, num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0)
+        cur_unc_psnr, cur_unc_ssim = evaluation.calculate_all(args, fused_yf_tensor, yt)
+        psnr_fuse_unc += cur_unc_psnr
+        ssim_fuse_unc += cur_unc_ssim
         
         if args.visualize:
             classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
             classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
             masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
             
             edge_patch_map = visualize_edge_map(lr_list, batch_idx, args.scale)
             edge_map = utils.combine(edge_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_patch.jpeg"), edge_map)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_patch.jpeg"), edge_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
             masked_yt_edge = utils.apply_alpha_mask(yt_image, edge_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_alpha_masked.jpeg"), masked_yt_edge)
             
-            unc_patch_map = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
+            unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
             unc_map = utils.combine(unc_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_patch.jpeg"), unc_map)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_patch.jpeg"), unc_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
             masked_yt_unc = utils.apply_alpha_mask(yt_image, unc_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_alpha_masked.jpeg"), masked_yt_unc)
-            
+
             psnr_patch_map = visualize_last_psnr_map(combine_img_lists[-1], batch_idx, all_last_psnrs)
             psnr_map = utils.combine(psnr_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_patch.jpeg"), psnr_map)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_patch.jpeg"), psnr_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
             masked_yt_psnr = utils.apply_alpha_mask(yt_image, psnr_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_alpha_masked.jpeg"), masked_yt_psnr)
@@ -642,11 +666,17 @@ def test():
     psnr_fuse_err /= len(XYtest) 
     ssim_fuse_err /= len(XYtest)
     
+    psnr_fuse_unc /= len(XYtest)
+    ssim_fuse_unc /= len(XYtest)
+    
     print(*psnrs_val, psnr_fuse)
     print(*ssims_val, ssim_fuse)
     
     print("error psnr: ", psnr_fuse_err)
     print("error ssim: ", ssim_fuse_err)
+    
+    print("unc psnr: ", psnr_fuse_unc)
+    print("unc ssim: ", ssim_fuse_unc)
     
     percent_total = percent_total.tolist()
     percent_total_err = percent_total_err.tolist()
