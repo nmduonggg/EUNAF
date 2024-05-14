@@ -496,6 +496,7 @@ def test():
     total_mask_loss = 0.0
     psnr_fuse, ssim_fuse = 0.0, 0.0
     psnr_fuse_err, ssim_fuse_err = 0.0, 0.0
+    psnr_fuse_auto, ssim_fuse_auto = 0.0, 0.0
     #walk through the test set
     core.eval()
     # core.train()
@@ -505,6 +506,7 @@ def test():
     # align_biases = core.align_biases
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
+    percent_total_auto = np.zeros(shape=[num_blocks])
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         x  = x.cuda()
         yt = yt.cuda()
@@ -515,18 +517,24 @@ def test():
         
         yfs, masks = out
         yf_fuse, percent = visualize_fusion_map_last(yfs, masks, batch_idx)
+        yf_fuse_auto, percent_auto = visualize_fusion_map(yfs, masks, batch_idx)
         yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
         yf_fuse_by_err = yf_fuse_by_err.cuda()
         yf_fuse = yf_fuse.cuda()
+        yf_fuse_auto = yf_fuse_auto.cuda()
         
         percent_total += percent
         percent_total_err += percent_err
+        percent_total_auto += percent_auto
         cur_psnr_fuse, cur_ssim_fuse = evaluation.calculate_all(args, yf_fuse, yt)
         cur_psnr_fuse_err, cur_ssim_fuse_err = evaluation.calculate_all(args, yf_fuse_by_err, yt)
+        cur_psnr_fuse_auto, cur_ssim_fuse_auto = evaluation.calculate_all(args, yf_fuse_auto, yt)
         psnr_fuse += cur_psnr_fuse
         ssim_fuse += cur_ssim_fuse
         psnr_fuse_err += cur_psnr_fuse_err
         ssim_fuse_err += cur_ssim_fuse_err
+        psnr_fuse_auto += cur_psnr_fuse_auto
+        ssim_fuse_auto += cur_ssim_fuse_auto
         
         if args.visualize:
             visualize_histogram_im(masks, batch_idx)
@@ -568,24 +576,25 @@ def test():
     ssims_val = [p / len(XYtest) for p in ssims_val]
     percent_total = percent_total / len(XYtest)
     percent_total_err /= len(XYtest)
+    percent_total_auto /= len(XYtest)
     psnr_fuse = psnr_fuse / len(XYtest)
     ssim_fuse = ssim_fuse / len(XYtest)
     
-    psnr_fuse_err /= len(XYtest) 
-    ssim_fuse_err /= len(XYtest)
+    psnr_fuse_auto /= len(XYtest) 
+    ssim_fuse_auto /= len(XYtest)
     
     print(*psnrs_val, psnr_fuse)
     print(*ssims_val, ssim_fuse)
     
-    print("error psnr: ", psnr_fuse_err)
-    print("error ssim: ", ssim_fuse_err)
+    print("auto psnr: ", psnr_fuse_auto)
+    print("auto ssim: ", ssim_fuse_auto)
     
     percent_total = percent_total.tolist()
-    percent_total_err = percent_total_err.tolist()
+    percent_total_auto = percent_total_auto.tolist()
     for perc in percent_total:
         print( f"{(perc*100):.3f}", end=' ')
     print()
-    for perc in percent_total_err:
+    for perc in percent_total_auto:
         print( f"{(perc*100):.3f}", end=' ')
     
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]

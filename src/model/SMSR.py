@@ -240,23 +240,37 @@ class EUNAF_SMSR(SMSR):
         x = self.head(x0)
         fea = x
         
-        # sparsity = []
-        out_fea = []
+        # enauf frame work start here
+        outs = list() 
+        masks = list()
+        
+        out_fea = list()
+        # sparsity = list()
         for i in range(self.n_resblocks):
             fea, _spa_mask, _ch_mask = self.body[i](fea)
             round_spa, round_ch = _spa_mask.round(), _ch_mask.round()
             out_fea.append(fea)
             # sparsity.append((_spa_mask * _ch_mask[..., 1].view(1, -1, 1, 1) + torch.ones_like(_spa_mask) * _ch_mask[..., 0].view(1, -1, 1, 1)).float())
             # self.density.append(torch.mean((round_spa * round_ch[..., 1].view(1, -1, 1, 1) + torch.ones_like(round_spa) * round_ch[..., 0].view(1, -1, 1, 1)).float()))
-        out_fea = self.collect(torch.cat(out_fea, 1)) + x
-        # sparsity = torch.cat(sparsity, 0)
-        
-        x = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
-        
-        outs = [torch.zeros_like(x) for _ in range(self.n_estimators-1)] + [x]
-        masks = [torch.zeros_like(x) for _ in range(self.n_estimators)]
-        
-        return [outs], masks
+            
+            if i==self.n_resblocks-1:
+                out_fea = self.collect(torch.cat(out_fea, 1)) + x
+                # sparsity = torch.cat(sparsity, 0)
+                out = self.tail(out_fea) + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
+                outs.append(out)
+                
+            else:
+                if i > (self.n_resblocks - self.n_estimators) - 1:
+                    tmp_out = self.predictors[i - self.n_resblocks + self.n_estimators](fea)  + F.interpolate(x0, scale_factor=self.scale, mode='bicubic', align_corners=False)
+                    outs.append(tmp_out)
+                    
+                elif i== (self.n_resblocks - self.n_estimators) - 1:  # last block before intermediate predictors
+                    for j in range(self.n_estimators): 
+                        mask = self.estimators[j](fea)
+                        mask = self.add_mean(mask)
+                        masks.append(mask)  
+                    
+        return outs, masks
     
     def eunaf_forward(self, x):
         x0 = x

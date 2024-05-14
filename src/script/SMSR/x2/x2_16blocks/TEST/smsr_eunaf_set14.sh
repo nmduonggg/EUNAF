@@ -1,5 +1,5 @@
-python test_eunaf.py \
-    --template EUNAF_SMSRx2 \
+python test_eunaf_by_patches.py \
+    --template EUNAF_SMSRxN \
     --testset_tag Set14RGB \
     --N 14 \
     --testset_dir ../../data/ \
