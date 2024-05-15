@@ -95,7 +95,7 @@ class EUNAF_MSRResNet(MSRResNet):
         super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=False)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=True)
             
     def get_n_estimators(self):
         return self.n_estimators
@@ -107,11 +107,11 @@ class EUNAF_MSRResNet(MSRResNet):
         for _ in range(num_blocks):
             m_tail = [
                 conv(self.nf, out_channels*self.upscale*self.upscale, self.kernel_size),
-                nn.PixelShuffle(self.upscale), nn.LeakyReLU(0.1, True),
+                nn.PixelShuffle(self.upscale),
                 conv(out_channels, out_channels, 3)
             ]
             common.initialize_weights(m_tail, 0.1)
-            if last_act: m_tail.append(nn.LeakyReLU())
+            if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
             
         return interm_predictors
@@ -126,7 +126,7 @@ class EUNAF_MSRResNet(MSRResNet):
     def forward(self, x):
         
         outs, masks = list(), list()
-        
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         fea = self.lrelu(self.conv_first(x))
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
@@ -134,7 +134,7 @@ class EUNAF_MSRResNet(MSRResNet):
             if i < self.nb-1:
                 if i > (self.nb - self.n_estimators)-1:
                     tmp_out = self.predictors[i - self.nb + self.n_estimators](fea)
-                    outs.append(tmp_out)
+                    outs.append(tmp_out+base)
                 elif i==(self.nb - self.n_estimators)-1:
                     for j in range(self.n_estimators):
                         mask = self.estimators[j](fea)
@@ -147,7 +147,6 @@ class EUNAF_MSRResNet(MSRResNet):
             out = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
         out = self.conv_last(self.lrelu(self.HRconv(out)))  
         
-        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         out += base
         
         outs.append(out)
@@ -157,8 +156,7 @@ class EUNAF_MSRResNet(MSRResNet):
     def eunaf_forward(self, x):
         
         outs, masks = list(), list()
-        base = F.interpolate(x.clone(), scale_factor=self.upscale, mode='bilinear', align_corners=False)
-        
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         fea = self.lrelu(self.conv_first(x))
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
@@ -166,8 +164,7 @@ class EUNAF_MSRResNet(MSRResNet):
             if i < self.nb-1:
                 if i > (self.nb - self.n_estimators)-1:
                     tmp_out = self.predictors[i - self.nb + self.n_estimators](fea)
-                    tmp_out += base
-                    outs.append(tmp_out)
+                    outs.append(tmp_out+base)
                 elif i==(self.nb - self.n_estimators)-1:
                     for j in range(self.n_estimators):
                         mask = self.estimators[j](fea)
@@ -178,7 +175,8 @@ class EUNAF_MSRResNet(MSRResNet):
             out = self.lrelu(self.pixel_shuffle(self.upconv2(fea)))
         elif self.upscale == 3 or self.upscale == 2:
             out = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
-        out = self.conv_last(self.lrelu(self.HRconv(out)))
+        out = self.conv_last(self.lrelu(self.HRconv(out)))  
+        
         out += base
         
         outs.append(out)

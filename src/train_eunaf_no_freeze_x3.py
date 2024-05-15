@@ -29,7 +29,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -51,6 +51,9 @@ if args.weight:
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
+    # args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
+    # core.load_state_dict(torch.load(args.weight), strict=False)
+    # print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -102,6 +105,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
     
     for i in range(len(yfs)):
         yf = yfs[i]
+        # esu += loss_func(yf, yt) 
         if freeze_mask:
             mask_ = masks[i].clone().detach()
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
@@ -111,12 +115,11 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
         yf = torch.mul(yf, s)
         yt = torch.mul(ori_yt, s)
         l1_loss = loss_func(yf, yt)
+        
         esu = esu + 2*mask_.mean()
         
-        l1_loss = loss_func(yf, yt)
-        
         esu = esu + l1_loss
-        
+    esu = esu * 1/len(yfs)
     return esu
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
@@ -205,7 +208,7 @@ def get_fusion_map_last(outs, masks, rates=[]):
 def loss_alignment_2(yfs, masks, yt):
     
     all_rates = [
-        [10, 20, 60]
+        [10, 30, 60]
     ]
     aln_loss = 0.0
     for rate in all_rates:

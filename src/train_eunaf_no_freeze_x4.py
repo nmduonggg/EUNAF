@@ -29,7 +29,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=2)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))

@@ -1,4 +1,4 @@
-python train_eunaf.py \
+python train_eunaf_no_freeze_x3.py \
     --template EUNAF_SMSRxN \
     --N 14 \
     --scale 3 \
@@ -9,7 +9,7 @@ python train_eunaf.py \
     --lr 0.00001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
-    --trainset_preload 400 \
+    --trainset_preload 100 \
     --weight './checkpoints/EUNAF_EDSRx2_bl_x2_nb16_nf64_st1/_best.t7' \
     # --wandb \
     # --lr 0.00

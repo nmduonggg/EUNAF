@@ -51,7 +51,7 @@ class EUNAF_FSRCNN(FSRCNN_net):
         super(EUNAF_FSRCNN, self).__init__(args, conv=conv)
         self.n_estimators = min(args.n_estimators, self.m//2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=True)
 
         common.initialize_weights([self.predictors, self.estimators], 0.1)
         
@@ -82,7 +82,7 @@ class EUNAF_FSRCNN(FSRCNN_net):
         outs, masks = list(), list()
         for i, b in enumerate(self.body_conv):
             fea = b(fea)
-            if i==0:
+            if i==2:
                 tmp_out = self.predictors[0](fea)
                 outs.append(tmp_out)
                 for j in range(self.n_estimators):

@@ -1,4 +1,4 @@
-python train_eunaf.py \
+python train_eunaf_no_freeze_x4.py \
     --template EUNAF_SMSRxN \
     --N 14 \
     --scale 4 \
