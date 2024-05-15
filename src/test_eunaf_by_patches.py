@@ -40,7 +40,7 @@ if args.weight:
     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=False)
+    core.load_state_dict(torch.load(args.weight), strict=True)
 core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)

@@ -29,7 +29,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=2)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -51,9 +51,9 @@ if args.weight:
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
-    # args.weight = './checkpoints/PRETRAINED/FSRCNN/FSRCNN_branch3.pth'
-    # core.load_state_dict(torch.load(args.weight), strict=False)
-    # print(f"[INFO] Load weight from {args.weight}")
+    args.weight = './checkpoints/PRETRAINED/FSRCNN/FSRCNN_branch3.pth'
+    core.load_state_dict(torch.load(args.weight), strict=False)
+    print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -113,6 +113,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             mask_ = masks[i]
             
         l1_loss = loss_func(yf, yt)
+        esu += l1_loss
         
         if i==len(yfs)-1:
             s = torch.exp(-mask_)
@@ -121,7 +122,7 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             l1_loss = loss_func(yf, yt)
             esu = esu + 2*mask_.mean()
         
-        esu = esu + l1_loss
+            esu = esu + l1_loss
         
     return esu
 

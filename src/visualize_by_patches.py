@@ -441,7 +441,7 @@ def visualize_edge_map(patches, im_idx, scale):
     patches_np = np.array(patches)
     imscores = np.array([utils.laplacian(p).mean() for p in patches])   # P
     
-    q1, q2, q3 = np.percentile(imscores, [10, 30, 50])
+    q1, q2, q3 = np.percentile(imscores, [40, 60, 80])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
@@ -475,17 +475,19 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, = np.percentile(imscores, [80])
+    q1, q2, q3 = np.percentile(imscores, [40, 60, 80])
     
     p0 = (imscores < q1).astype(int)
-    p1 = (q1 <= imscores).astype(int)
+    p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
+    p2 = (np.logical_and(q2 <= imscores, imscores < q3)).astype(int)
+    p3 = (q3 <= imscores).astype(int)
     class_colors = [
         [0, 0, 255],
         [19, 239, 85],
         [235, 255, 128],
         [255, 0, 0]
     ]
-    per_class = [p0, p1]
+    per_class = [p0, p1, p2, p3]
     out_patches = 0
     for i, class_mask in enumerate(per_class):
         color = class_colors[i]
@@ -520,8 +522,8 @@ def visualize_last_psnr_map(patches, im_idx, psnrs):
     patches = [(p*255).astype(np.uint8) for p in patches]   # PxHxWxC
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in psnrs])
-    
-    q1, q2, q3 = np.percentile(imscores, [60, 80, 90])
+    # [40, 60, 80]
+    q1, q2, q3 = np.percentile(imscores, [20, 40, 60])
     
     p0 = (imscores <= q1).astype(int)
     p1 = (np.logical_and(q1 < imscores, imscores <= q2)).astype(int)
@@ -577,7 +579,7 @@ def test():
             m._prepare()
             
     # flops of 1 patch
-    utils.calc_flops_2blocks(core, (1, 3, 32, 32))
+    utils.calc_flops(core, (1, 3, 32, 32))
             
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
@@ -587,7 +589,6 @@ def test():
         
         # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         # yt = utils.modcrop(yt)
-        
         
         # cut patches
         x_np = x.permute(0,2,3,1).squeeze(0).numpy()
@@ -653,8 +654,8 @@ def test():
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         # error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        if args.visualize:
-            visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        # if args.visualize:
+        #     visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         
         unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
         fused_yf_unc_patches = fuse_by_last_unc_by_patches(combine_img_lists, batch_idx, unc_patch_indices)
@@ -664,32 +665,32 @@ def test():
         ssim_fuse_unc += cur_unc_ssim
         
         if args.visualize:
-            classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
-            classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
-            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
-            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
-            plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
+            # classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+            # classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
+            # # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_classify_patch.jpeg"), classified_map)
+            # yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            # masked_yt = utils.apply_alpha_mask(yt_image, classified_map, alpha)
+            # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_alpha_masked.jpeg"), masked_yt)
             
             edge_patch_map = visualize_edge_map(lr_list, batch_idx, args.scale)
             edge_map = utils.combine(edge_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_patch.jpeg"), edge_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_edge = utils.apply_alpha_mask(yt_image, edge_map, alpha)
+            masked_yt_edge = utils.apply_alpha_mask(yt_image/255.0, edge_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_alpha_masked.jpeg"), masked_yt_edge)
             
             unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
             unc_map = utils.combine(unc_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_patch.jpeg"), unc_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_unc = utils.apply_alpha_mask(yt_image, unc_map, alpha)
+            masked_yt_unc = utils.apply_alpha_mask(yt_image/255.0, unc_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_alpha_masked.jpeg"), masked_yt_unc)
 
             psnr_patch_map = visualize_last_psnr_map(combine_img_lists[-1], batch_idx, all_last_psnrs)
             psnr_map = utils.combine(psnr_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_patch.jpeg"), psnr_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_psnr = utils.apply_alpha_mask(yt_image, psnr_map, alpha)
+            masked_yt_psnr = utils.apply_alpha_mask(yt_image/255.0, psnr_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_alpha_masked.jpeg"), masked_yt_psnr)
             
         for i, p in enumerate(psnr_v_layers):

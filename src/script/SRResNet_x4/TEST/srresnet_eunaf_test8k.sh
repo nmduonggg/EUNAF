@@ -1,12 +1,12 @@
-python test_eunaf_by_patches.py \
+python visualize_by_patches.py \
     --template EUNAF_SRResNetxN \
-    --testset_tag Test2K \
+    --testset_tag Test8K \
     --N 100 \
-    --testset_dir ../../data/test2k/ \
+    --testset_dir ../../data/test8k/ \
     --train_stage 1 \
     --n_resblocks 16 \
     --n_estimators 4 \
     --scale 4 \
     --eval_tag ssim \
-    --rgb_channel
-    # --visualize
+    --rgb_channel \
+    --visualize

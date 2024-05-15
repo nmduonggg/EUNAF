@@ -24,6 +24,8 @@ from data.Urban100_RGB_testset import Urban100_RGB_testset
 from data.Flickr2K_testset import Flickr2K_testset
 from data.Manga109_testset import Manga109_testset
 from data.Test2K_testset import Test2K_testset
+from data.Test4K_testset import Test4K_testset
+from data.Test8K_testset import Test8K_testset
 
 def load_trainset(args):
     tag = args.trainset_tag
@@ -63,6 +65,14 @@ def load_testset(args):
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
         return Test2K_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
+    elif tag== 'Test4K' and args.style=='RGB':
+        print('[WARN] RGB range (<rgb_range>) set to 1.0')
+        batch_size_test = 1
+        return Test4K_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
+    elif tag== 'Test8K' and args.style=='RGB':
+        print('[WARN] RGB range (<rgb_range>) set to 1.0')
+        batch_size_test = 1
+        return Test8K_testset(root=args.testset_dir, scale=args.scale, style=args.style, rgb_range=args.rgb_range), batch_size_test
     elif tag== 'Manga109' and args.style=='RGB':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
