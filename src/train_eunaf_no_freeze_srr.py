@@ -215,6 +215,7 @@ def loss_alignment_2(yfs, masks, yt):
         fused_out = get_fusion_map_last(yfs, masks, rates=rate)
         aln_loss += loss_func(fused_out, yt)
     aln_loss = aln_loss / len(all_rates)
+    aln_loss += loss_func(yfs[-1], yt)*0.5
     
     return aln_loss, fused_out
         

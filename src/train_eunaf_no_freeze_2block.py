@@ -44,16 +44,16 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    # fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
-    #     else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
-    # out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
-    # if os.path.exists(out_dir):
-    #     args.weight = os.path.join(out_dir, '_best.t7')
-    #     print(f"[INFO] Load weight from {args.weight}")
-    #     core.load_state_dict(torch.load(args.weight), strict=False)
-    args.weight = './checkpoints/PRETRAINED/FSRCNN/FSRCNN_branch3.pth'
-    core.load_state_dict(torch.load(args.weight), strict=False)
-    print(f"[INFO] Load weight from {args.weight}")
+    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
+        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
+    if os.path.exists(out_dir):
+        args.weight = os.path.join(out_dir, '_best.t7')
+        print(f"[INFO] Load weight from {args.weight}")
+        core.load_state_dict(torch.load(args.weight), strict=False)
+    # args.weight = './checkpoints/PRETRAINED/FSRCNN/FSRCNN_branch3.pth'
+    # core.load_state_dict(torch.load(args.weight), strict=False)
+    # print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -111,15 +111,17 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
         else:
             mask_ = masks[i]
-        s = torch.exp(-mask_)
-        yf = torch.mul(yf, s)
-        yt = torch.mul(ori_yt, s)
+            
         l1_loss = loss_func(yf, yt)
-        esu = esu + 2*mask_.mean()
+        
+        if i==len(yfs)-1:
+            s = torch.exp(-mask_)
+            yf = torch.mul(yf, s)
+            yt = torch.mul(ori_yt, s)
+            l1_loss = loss_func(yf, yt)
+            esu = esu + 2*mask_.mean()
         
         esu = esu + l1_loss
-        
-    esu *= 1/len(yfs)
         
     return esu
 
@@ -215,6 +217,8 @@ def loss_alignment_2(yfs, masks, yt):
         fused_out = get_fusion_map_last(yfs, masks, rates=rate)
         aln_loss += loss_func(fused_out, yt)
     aln_loss = aln_loss / len(all_rates)
+    
+    aln_loss += loss_func(yfs[-1], yt)*0.5
     
     return aln_loss, fused_out
         

@@ -1,4 +1,4 @@
-python train_eunaf_no_freeze_x4.py \
+python train_eunaf_no_freeze_srr.py \
     --template EUNAF_SRResNetxN \
     --N 14 \
     --scale 4 \
@@ -7,7 +7,7 @@ python train_eunaf_no_freeze_x4.py \
     --lr 0.00001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
-    --trainset_preload 100 \
+    --trainset_preload 400 \
     --n_estimators 4 \
     --rgb_channel \
     --weight './checkpoints/EUNAF_SRResNetxN_x2_nb16_nf64_st1/_best.t7' \

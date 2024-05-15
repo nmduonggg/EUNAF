@@ -475,7 +475,7 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2, q3 = np.percentile(imscores, [30, 50, 70])
+    q1, q2, q3 = np.percentile(imscores, [5, 20, 40])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)

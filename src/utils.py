@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 import warnings
 from calflops import calculate_flops
+from ptflops import get_model_complexity_info
 
 def calc_flops(model, size):
     flops, macs, params = calculate_flops(model=model, 
@@ -19,6 +20,14 @@ def calc_flops(model, size):
                                         print_detailed=True,
                                         output_precision=4)
     print("FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
+    
+def calc_flops_2blocks(model, size):
+    if len(size)>3:
+        size = size[1:]
+    macs, params = get_model_complexity_info(model, size, as_strings=True, backend='aten',
+                                           print_per_layer_stat=True, verbose=True)
+    print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+    print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
 def save_args(__file__, args):
     shutil.copy(os.path.basename(__file__), args.cv_dir)

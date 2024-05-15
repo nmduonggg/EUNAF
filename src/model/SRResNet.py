@@ -108,7 +108,7 @@ class EUNAF_MSRResNet(MSRResNet):
             m_tail = [
                 conv(self.nf, out_channels*self.upscale*self.upscale, self.kernel_size),
                 nn.PixelShuffle(self.upscale),
-                conv(out_channels, out_channels, 3)
+                conv(out_channels, out_channels, 1)
             ]
             common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
