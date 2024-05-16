@@ -79,7 +79,7 @@ def test():
         for i, v in enumerate(perf_v_layers):
             psnr_v_layers.append(v[0].item())
             ssim_v_layers.append(v[1].item())
-        unc_v_layers = [m.mean().cpu().item() for m in masks]
+        unc_v_layers = [torch.exp(m).mean().cpu().item() for m in masks]
         
         # store value
         psnr_map[batch_idx, :] = np.array(psnr_v_layers).reshape(1, -1)

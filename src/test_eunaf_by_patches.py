@@ -442,7 +442,9 @@ def fuse_classified_patch_level(p_yfs, p_masks, im_idx):
     masks = [
         np.stack([
             np.mean(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
-    masks[-1] *= 1.2
+    max_ratio = np.mean(masks[0] / masks[-1])
+    rescale_range = np.linspace(1, max_ratio, 4)
+    masks[-1]*=rescale_range[1]
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P

@@ -66,7 +66,11 @@ epochs = args.max_epochs - args.start_epoch
 
 num_blocks = 4
 
-optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
+trainable_params = []
+for p in core.paramteres():
+    if p.requires_grad: trainable_params.append(p)
+
+optimizer = Adam(trainbable_params, lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
 early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
