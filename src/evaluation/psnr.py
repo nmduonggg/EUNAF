@@ -23,9 +23,10 @@ def calculate_psnr(sr, hr, scale=2, rgb_range=1.0, rgb_channel=False):
 #     sr = sr.squeeze(0).permute(1,2,0).cpu().numpy()
 #     hr = hr.squeeze(0).permute(1,2,0).cpu().numpy()
     
-#     img1 = (sr*255).astype(np.float64)
-#     img2 = (hr*255).astype(np.float64)
-#     mse = np.mean((img1 - img2)**2)
+#     img1 = (sr).astype(np.float64)
+#     img2 = (hr).astype(np.float64)
+#     valid = (img1-img2)[scale:-scale, scale:-scale, :]
+#     mse = np.mean(valid**2)
 #     if mse == 0:
 #         return float('inf')
 #     return 20 * math.log10(255.0 / math.sqrt(mse))

@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from model import common
 
+import numpy as np
+
 
 
 def make_layer(block, n_layers):
@@ -94,20 +96,25 @@ class EUNAF_MSRResNet(MSRResNet):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
+        self.gap = self.nb // (self.n_estimators-1)
+        gap_range = np.arange(0, self.nb, self.gap)
+        print("Locate EE at location: ", gap_range.tolist())
+        
+        
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=False)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=True)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel,is_estimator=True, last_act=True)
             
     def get_n_estimators(self):
         return self.n_estimators
         
-    def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
+    def init_intermediate_out(self, num_blocks, conv, out_channels=1, is_estimator=False, last_act=False):
         
         interm_predictors = nn.ModuleList()
         
         for _ in range(num_blocks):
             m_tail = [
                 conv(self.nf, out_channels*self.upscale*self.upscale, self.kernel_size),
-                nn.PixelShuffle(self.upscale),
+                nn.PixelShuffle(self.upscale), nn.ReLU(),
                 conv(out_channels, out_channels, 1)
             ]
             common.initialize_weights(m_tail, 0.1)
@@ -118,24 +125,30 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n and 'tail' not in n:
+            if 'predictors' not in n and 'estimators' not in n:
                 p.requires_grad = False
-            else:
-                print(n, end="; ")
+                # for i in range(self.nb):
+                #     if i > (self.nb - self.n_estimators)-1 and 'recon_trunk' in n and str(i) in n:
+                #         p.requires_grad=True
+            if p.requires_grad:
+                print(n, end=' ')
     
     def forward(self, x):
         
         outs, masks = list(), list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        
+        
         fea = self.lrelu(self.conv_first(x))
+        gap_range = np.arange(0, self.nb, self.gap)
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
             if i < self.nb-1:
-                if i > (self.nb - self.n_estimators)-1:
-                    tmp_out = self.predictors[i - self.nb + self.n_estimators](fea)
+                if i in gap_range:
+                    tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
                     outs.append(tmp_out+base)
-                elif i==(self.nb - self.n_estimators)-1:
+                if i==gap_range[0]:
                     for j in range(self.n_estimators):
                         mask = self.estimators[j](fea)
                         masks.append(mask)
@@ -157,15 +170,18 @@ class EUNAF_MSRResNet(MSRResNet):
         
         outs, masks = list(), list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        
+        
         fea = self.lrelu(self.conv_first(x))
+        gap_range = np.arange(0, self.nb, self.gap)
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
             if i < self.nb-1:
-                if i > (self.nb - self.n_estimators)-1:
-                    tmp_out = self.predictors[i - self.nb + self.n_estimators](fea)
+                if i in gap_range:
+                    tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
                     outs.append(tmp_out+base)
-                elif i==(self.nb - self.n_estimators)-1:
+                if i==gap_range[0]:
                     for j in range(self.n_estimators):
                         mask = self.estimators[j](fea)
                         masks.append(mask)

@@ -34,13 +34,13 @@ XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False
 arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
-if args.weight:
-    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
-        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
-    args.weight = os.path.join(out_dir, '_best.t7')
-    print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=True)
+# if args.weight:
+#     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
+#         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
+#     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
+#     args.weight = os.path.join(out_dir, '_best.t7')
+#     print(f"[INFO] Load weight from {args.weight}")
+#     core.load_state_dict(torch.load(args.weight), strict=False)
 core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
@@ -441,7 +441,7 @@ def visualize_edge_map(patches, im_idx, scale):
     patches_np = np.array(patches)
     imscores = np.array([utils.laplacian(p).mean() for p in patches])   # P
     
-    q1, q2, q3 = np.percentile(imscores, [40, 60, 80])
+    q1, q2, q3 = np.percentile(imscores, [20, 30, 50])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
@@ -475,7 +475,7 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2, q3 = np.percentile(imscores, [40, 60, 80])
+    q1, q2, q3 = np.percentile(imscores, [20, 30, 50])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
@@ -523,7 +523,7 @@ def visualize_last_psnr_map(patches, im_idx, psnrs):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in psnrs])
     # [40, 60, 80]
-    q1, q2, q3 = np.percentile(imscores, [20, 40, 60])
+    q1, q2, q3 = np.percentile(imscores, [50, 70, 90])
     
     p0 = (imscores <= q1).astype(int)
     p1 = (np.logical_and(q1 < imscores, imscores <= q2)).astype(int)
@@ -559,7 +559,7 @@ num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(args.n_estimators, num_blocks)
 
 patch_size = 32
-step = 28
+step = 32
 alpha = 0.7
 
 def test():
@@ -593,11 +593,11 @@ def test():
         # cut patches
         x_np = x.permute(0,2,3,1).squeeze(0).numpy()
         lr_list, num_h, num_w, h, w = utils.crop_cpu(x_np, patch_size, step)
-        # yt = yt[:, :, :h*args.scale, :w*args.scale]
+        yt = yt[:, :, :h*args.scale, :w*args.scale]
         y_np = yt.permute(0,2,3,1).squeeze(0).numpy()
         hr_list = utils.crop_cpu(y_np, patch_size * args.scale, step*args.scale)[0]
         
-        yt = yt[:, :, :h*args.scale, :w*args.scale]
+        
         
         
         combine_img_lists = [list() for _ in range(num_blocks)]
@@ -676,21 +676,21 @@ def test():
             edge_map = utils.combine(edge_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_patch.jpeg"), edge_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_edge = utils.apply_alpha_mask(yt_image/255.0, edge_map, alpha)
+            masked_yt_edge = utils.apply_alpha_mask(yt_image, edge_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_edge_alpha_masked.jpeg"), masked_yt_edge)
             
             unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
             unc_map = utils.combine(unc_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_patch.jpeg"), unc_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_unc = utils.apply_alpha_mask(yt_image/255.0, unc_map, alpha)
+            masked_yt_unc = utils.apply_alpha_mask(yt_image, unc_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_unc_alpha_masked.jpeg"), masked_yt_unc)
 
             psnr_patch_map = visualize_last_psnr_map(combine_img_lists[-1], batch_idx, all_last_psnrs)
             psnr_map = utils.combine(psnr_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
             # plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_patch.jpeg"), psnr_map)
             yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
-            masked_yt_psnr = utils.apply_alpha_mask(yt_image/255.0, psnr_map, alpha)
+            masked_yt_psnr = utils.apply_alpha_mask(yt_image, psnr_map, alpha)
             plt.imsave(os.path.join(out_dir, f"img_{batch_idx}_psnr_alpha_masked.jpeg"), masked_yt_psnr)
             
         for i, p in enumerate(psnr_v_layers):

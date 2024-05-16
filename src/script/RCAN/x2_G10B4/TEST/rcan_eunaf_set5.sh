@@ -1,5 +1,5 @@
-python test_eunaf.py \
-    --template EUNAF_RCANx2 \
+python test_eunaf_by_patches.py \
+    --template EUNAF_RCANxN \
     --testset_tag Set5RGB \
     --N 5 \
     --testset_dir ../../data/ \

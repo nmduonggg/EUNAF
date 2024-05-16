@@ -3,11 +3,11 @@ from torch.utils.data import Dataset
 from .common import load_image_as_Tensor
 
 class Test2K_testset(Dataset):
-    def __init__(self, root, scale=4, style='RGB', rgb_range=1.0):
+    def __init__(self, root, scale=4, style='RGB', rgb_range=1.0, N=100):
         super(Test2K_testset, self).__init__()
         assert scale==4, "Only support scale=4 for Test2K"
 
-        self.N_raw_image = 100
+        self.N_raw_image = N
         self.N = self.N_raw_image
 
         self.X, self.Y = [], []

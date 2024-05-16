@@ -4,7 +4,7 @@ python train_eunaf_no_freeze_srr.py \
     --scale 4 \
     --train_stage 1 \
     --max_epochs 600 \
-    --lr 0.0001 \
+    --lr 0.001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
     --trainset_preload 100 \

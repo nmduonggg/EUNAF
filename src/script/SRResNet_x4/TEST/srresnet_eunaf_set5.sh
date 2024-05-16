@@ -1,8 +1,8 @@
-python visualize_by_patches.py \
+python test_eunaf.py \
     --template EUNAF_SRResNetxN \
-    --testset_tag Test4K \
+    --testset_tag Set5RGB \
     --N 100 \
-    --testset_dir ../../data/test4k/ \
+    --testset_dir ../../data/ \
     --train_stage 1 \
     --n_resblocks 16 \
     --n_estimators 4 \

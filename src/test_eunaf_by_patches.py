@@ -475,7 +475,7 @@ def visualize_last_unc_map(patches, im_idx, last_unc):
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in last_unc])
     
-    q1, q2, q3 = np.percentile(imscores, [5, 20, 40])
+    q1, q2, q3 = np.percentile(imscores, [30, 50, 70])
     
     p0 = (imscores < q1).astype(int)
     p1 = (np.logical_and(q1 <= imscores, imscores < q2)).astype(int)
@@ -588,7 +588,9 @@ def test():
         # yt = yt.cuda()
         
         # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
-        # yt = utils.modcrop(yt)
+        yt = yt.squeeze(0).permute(1,2,0).cpu().numpy()
+        yt = utils.modcrop(yt, args.scale)
+        yt = torch.tensor(yt).permute(2,0,1).unsqueeze(0)
         
         # cut patches
         x_np = x.permute(0,2,3,1).squeeze(0).numpy()
@@ -596,7 +598,6 @@ def test():
         # yt = yt[:, :, :h*args.scale, :w*args.scale]
         y_np = yt.permute(0,2,3,1).squeeze(0).numpy()
         hr_list = utils.crop_cpu(y_np, patch_size * args.scale, step*args.scale)[0]
-        
         yt = yt[:, :, :h*args.scale, :w*args.scale]
         
         

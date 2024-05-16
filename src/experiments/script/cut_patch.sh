@@ -1,4 +1,5 @@
 python experiments/cut_patch_rgb.py \
-    --dataset Set14 \
-    --scale 2 \
+    --dataset Test2K \
+    --root '/mnt/disk1/nmduong/FusionNet/data/test2k/' \
+    --scale 4 \
     --patch_size 32 \

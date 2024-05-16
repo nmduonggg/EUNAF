@@ -1,4 +1,4 @@
-python train_eunaf_no_freeze.py \
+python train_eunaf_no_freeze_srr.py \
     --template EUNAF_RCANxN \
     --N 14 \
     --scale 2 \
@@ -9,7 +9,7 @@ python train_eunaf_no_freeze.py \
     --testset_dir='../../data/' \
     --trainset_preload 400 \
     --n_estimators 4 \
-    --weight './checkpoints/EUNAF_RCANx2_x2_nb4_nf64_ng10_st0/_best.t7' \
+    # --weight './checkpoints/EUNAF_RCANx2_x2_nb4_nf64_ng10_st0/_best.t7' \
     # --wandb \
     # --lr 0.00
     # --max_load 1000

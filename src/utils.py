@@ -284,6 +284,23 @@ def laplacian(image):
     mask_img = cv2.convertScaleAbs(laplac)
     return mask_img
 
+def modcrop(img_in, scale):
+    """img_in: Numpy, HWC or HW"""
+    img = np.copy(img_in)
+    if img.ndim == 2:
+        H, W = img.shape
+        H_r, W_r = H % scale, W % scale
+        img = img[:H - H_r, :W - W_r]
+    elif img.ndim == 3:
+        H, W, C = img.shape
+        H_r, W_r = H % scale, W % scale
+        img = img[:H - H_r, :W - W_r, :]
+    else:
+        raise ValueError('Wrong img ndim: [{:d}].'.format(img.ndim))
+    return img
+
+
+
 class LrScheduler:
     def __init__(self, optimizer, base_lr, lr_decay_ratio, epoch_step):
         self.base_lr = base_lr

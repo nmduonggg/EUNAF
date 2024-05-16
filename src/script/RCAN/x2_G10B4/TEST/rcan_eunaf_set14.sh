@@ -1,4 +1,4 @@
-python test_eunaf.py \
+python test_eunaf_by_patches.py \
     --template EUNAF_RCANxN \
     --testset_tag Set14RGB \
     --N 14 \
