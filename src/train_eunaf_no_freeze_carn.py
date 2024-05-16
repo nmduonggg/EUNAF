@@ -51,6 +51,9 @@ if args.weight:
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
+    args.weight = './checkpoints/PRETRAINED/CARN/CARN_branch3.pth'
+    core.load_state_dict(torch.load(args.weight), strict=False)
+    print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -58,8 +61,10 @@ core.cuda()
 lr = args.lr
 batch_size = args.batch_size
 epochs = args.max_epochs - args.start_epoch
-num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
-num_blocks = min(num_blocks//2, args.n_estimators)
+# num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
+# num_blocks = min(num_blocks//2, args.n_estimators)
+
+num_blocks = 4
 
 optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
@@ -108,16 +113,13 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
         else:
             mask_ = masks[i]
+        
         s = torch.exp(-mask_)
         yf = torch.mul(yf, s)
         yt = torch.mul(ori_yt, s)
-        l1_loss = loss_func(yf, yt)
-        esu = esu + 2*mask_.mean()
+        sl1_loss = loss_func(yf, yt)
+        esu = esu + (2*mask_.mean() + sl1_loss)
         
-        l1_loss = loss_func(yf, yt)
-        
-        esu = esu + l1_loss
-    esu = esu *  1/len(yfs)
     return esu
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
@@ -162,28 +164,30 @@ def rescale_masks(masks):
 
 def get_fusion_map_last(outs, masks, rates=[]):
     
-    masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for i, m in enumerate(masks)]
+    masks = [torch.mean(m, dim=1, keepdim=True) for i, m in enumerate(masks)]
     mask = masks[-1].clone().detach().cpu()    # B, C, H, W
     bs, _, h, w = mask.shape
+    small_mask = F.interpolate(mask, scale_factor=0.25, mode='bilinear')
     
     quantile_class = list()
     for r in rates:
         if r > 1: r /= 100
-        tmp_mask = mask.squeeze(1).reshape(bs, -1)  # bx(hw)
+        tmp_mask = small_mask.squeeze(1).reshape(bs, -1)  # bx(hw)
         q = torch.quantile(tmp_mask, r, dim=1, keepdim=True)
         q = q.reshape(bs, 1, 1, 1)
+        
         quantile_class.append(q)
     
     per_class = list()
     for i in range(len(quantile_class)+1):
         q = quantile_class[i] if i<len(quantile_class) else quantile_class[i-1]
-        q = torch.ones_like(mask) * q
+        q = torch.ones_like(small_mask) * q
         if i==0:
-            p = (mask < q).float()
+            p = (small_mask < q).float()
         elif i==len(quantile_class):
-            p = (q <= mask).float()
+            p = (q <= small_mask).float()
         else:
-            p = (torch.logical_and(quantile_class[i-1] <= mask, mask < q)).float()
+            p = (torch.logical_and(quantile_class[i-1] <= small_mask, small_mask < q)).float()
         per_class.append(p)
         
     processed_outs = list()
@@ -192,8 +196,8 @@ def get_fusion_map_last(outs, masks, rates=[]):
         if i<len(outs):
             fout = outs[i]
             cur_mask = per_class[i].to(fout.device)
-            cur_fout = fout*cur_mask
-            processed_outs.append(fout * cur_mask)
+            cur_fout = fout * F.interpolate(cur_mask, scale_factor=4, mode='nearest')
+            processed_outs.append(cur_fout)
             
         else:
             # filter_outs = [f + align_biases[i] * onehot_indices[..., i] if i<len(filter_outs)-1 else f for i, f in enumerate(filter_outs)]
@@ -206,16 +210,18 @@ def get_fusion_map_last(outs, masks, rates=[]):
 def loss_alignment_2(yfs, masks, yt):
     
     all_rates = [
-        [50, 70, 80]
+        [20, 40, 60]
     ]
     aln_loss = 0.0
     for rate in all_rates:
         fused_out = get_fusion_map_last(yfs, masks, rates=rate)
         aln_loss += loss_func(fused_out, yt)
     aln_loss = aln_loss / len(all_rates)
+    aln_loss = aln_loss + loss_func(yfs[-1], yt) * 0.1
     
     return aln_loss, fused_out
         
+
 
 # training
 def train():
@@ -232,7 +238,7 @@ def train():
         )
     
     best_perf = -1e9 # psnr
-    if args.train_stage > 1:
+    if args.train_stage > 0:
         core.freeze_backbone()
     
     for epoch in range(epochs):
@@ -332,9 +338,10 @@ def train():
             
             train_loss = 0.0
             if args.train_stage==0:
-                for out_ in outs_mean:
-                    train_loss += loss_func(out_, yt)
-                train_loss /= len(outs_mean)
+                # for out_ in outs_mean:
+                #     train_loss += loss_func(out_, yt)
+                train_loss += loss_func(outs_mean[-1], yt)
+                # train_loss /= len(outs_mean)
             elif args.train_stage==1:
                 train_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
             else:

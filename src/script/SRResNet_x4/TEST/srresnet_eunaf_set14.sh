@@ -1,7 +1,7 @@
 python test_eunaf.py \
     --template EUNAF_SRResNetxN \
-    --testset_tag Set5RGB \
-    --N 100 \
+    --testset_tag Set14RGB \
+    --N 14 \
     --testset_dir ../../data/ \
     --train_stage 1 \
     --n_resblocks 16 \

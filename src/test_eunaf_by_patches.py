@@ -323,7 +323,8 @@ def get_fusion_map_last(outs, masks, rates=[]):
 def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_biases=None):
     
     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
-    masks = [torch.exp(m) for i, m in enumerate(masks)]
+    masks = [torch.mean(torch.exp(m)) for i, m in enumerate(masks)]
+    masks[-1] *= 1.1
 
     all_masks = torch.stack(masks, dim=-1) # 1xCxHxW -> 1xCxHxWxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, 1xCxHxW
@@ -339,7 +340,8 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
             fout = filter_outs[i]
             p = onehot_indices[..., i].float().mean()
             percent[i] = p
-            cur_mask = onehot_indices[..., i].squeeze(0).permute(1,2,0).cpu().numpy().astype(np.uint8)
+            # cur_mask = onehot_indices[..., i].squeeze(0).permute(1,2,0).cpu().numpy().astype(np.uint8)
+            cur_mask = onehot_indices[..., i].reshape(1, 1, 1).cpu().numpy().astype(np.uint8)
             
             cur_fout = fout*cur_mask
             processed_outs.append(fout * cur_mask)
@@ -415,6 +417,8 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
         [235, 255, 128],
         [255, 0, 0]
     ]
+    
+    percents = list()
     for i in range(len(p_masks) ):
         fout = np.ones_like(yfs[i]) * np.array(class_colors[i])/255.0
         fout[:, :1, :, :] = 0
@@ -422,6 +426,7 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
         fout[:, :, :1, :] = 0
         fout[:, :, -1:, :] = 0
         cur_mask = onehot_indices[..., i].numpy().astype(np.uint8)
+        percents.append(cur_mask.mean())
         cur_mask = cur_mask.reshape(-1, 1, 1, 1)
         
         cur_fout = (fout*cur_mask)
@@ -430,6 +435,34 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     classified_map = [processed_outs[i,...] for i in range(processed_outs.shape[0])]
     
     return classified_map
+
+def fuse_classified_patch_level(p_yfs, p_masks, im_idx):
+    # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
+    yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
+    masks = [
+        np.stack([
+            np.mean(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
+    masks[-1] *= 1.2
+    
+    all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
+    raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
+    onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # PxN
+    
+    processed_outs = 0
+    
+    percents = list()
+    for i in range(len(p_masks)):
+        fout = yfs[i] 
+        cur_mask = onehot_indices[..., i].numpy().astype(np.uint8)
+        percents.append(cur_mask.mean())
+        cur_mask = cur_mask.reshape(-1, 1, 1, 1)
+        
+        cur_fout = (fout*cur_mask)
+        processed_outs += cur_fout
+    
+    fused_classified = [processed_outs[i,...] for i in range(processed_outs.shape[0])]
+    
+    return fused_classified, percents
 
 def visualize_edge_map(patches, im_idx, scale):
     
@@ -513,12 +546,9 @@ def fuse_by_last_unc_by_patches(all_levels, im_idx, patch_indices):
         fusion_final += fuse_pid
     fusion_final = [fusion_final[i,:,:,:] for i in range(len(patches))]
     return fusion_final
-        
 
 def visualize_last_psnr_map(patches, im_idx, psnrs):
-    
-    # masks = [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks]
-    # masks = [torch.log(m) for m in masks]
+
     patches = [(p*255).astype(np.uint8) for p in patches]   # PxHxWxC
     patches_np = np.array(patches)
     imscores = np.array([u.mean() for u in psnrs])
@@ -571,6 +601,7 @@ def test():
     psnr_fuse, ssim_fuse = 0.0, 0.0
     psnr_fuse_err, ssim_fuse_err = 0.0, 0.0
     psnr_fuse_unc, ssim_fuse_unc = 0.0, 0.0
+    psnr_fuse_auto, ssim_fuse_auto = 0.0, 0.0
     
     #walk through the test set
     core.eval()
@@ -583,6 +614,7 @@ def test():
             
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
+    percent_total_auto = np.zeros(shape=[num_blocks])
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         # x  = x.cuda()
         # yt = yt.cuda()
@@ -665,6 +697,13 @@ def test():
         psnr_fuse_unc += cur_unc_psnr
         ssim_fuse_unc += cur_unc_ssim
         
+        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+        fused_auto_tensor = torch.from_numpy(utils.combine(fused_auto_patches, num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0)
+        percent_total_auto += np.array(percents_auto)
+        cur_auto_psnr, cur_auto_ssim = evaluation.calculate_all(args, fused_auto_tensor, yt)
+        psnr_fuse_auto += cur_auto_psnr
+        ssim_fuse_auto += cur_auto_ssim
+        
         if args.visualize:
             classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
             classified_map = utils.combine(classified_patch_map, num_h, num_w, h, w, patch_size, step, args.scale)
@@ -703,6 +742,7 @@ def test():
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
     ssims_val = [p / len(XYtest) for p in ssims_val]
     percent_total = percent_total / len(XYtest)
+    percent_total_auto /= len(XYtest)
     # percent_total_err /= len(XYtest)
     psnr_fuse = psnr_fuse / len(XYtest)
     ssim_fuse = ssim_fuse / len(XYtest)
@@ -712,9 +752,11 @@ def test():
     
     psnr_fuse_unc /= len(XYtest)
     ssim_fuse_unc /= len(XYtest)
+    psnr_fuse_auto /= len(XYtest)
+    ssim_fuse_auto /= len(XYtest)
     
-    print(*psnrs_val, psnr_fuse)
-    print(*ssims_val, ssim_fuse)
+    print(*psnrs_val)
+    print(*ssims_val)
     
     # print("error psnr: ", psnr_fuse_err)
     # print("error ssim: ", ssim_fuse_err)
@@ -727,8 +769,12 @@ def test():
     for perc in percent_total:
         print( f"{(perc*100):.3f}", end=' ')
     print()
-    # for perc in percent_total_err:
-    #     print( f"{(perc*100):.3f}", end=' ')
+    
+    print("fusion auto psnr: ", psnr_fuse_auto)
+    print("fusion auto ssim: ", ssim_fuse_auto)
+    print("Sampling patches rate:")
+    for perc in percent_total_auto:
+        print( f"{(perc*100):.3f}", end=' ')
     
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
     total_val_loss /= len(XYtest)

@@ -111,17 +111,12 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
         else:
             mask_ = masks[i]
-            
-        l1_loss = loss_func(yf, yt)
-        esu += l1_loss
         
         s = torch.exp(-mask_)
         yf = torch.mul(yf, s)
         yt = torch.mul(ori_yt, s)
-        l1_loss = loss_func(yf, yt)
-        esu = esu + 2*mask_.mean()
-    
-        esu = esu + l1_loss * 0.5
+        sl1_loss = loss_func(yf, yt)
+        esu = esu + (2*mask_.mean() + sl1_loss)
         
     return esu
 

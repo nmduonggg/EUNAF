@@ -102,7 +102,7 @@ class EUNAF_MSRResNet(MSRResNet):
         
         
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=False)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel,is_estimator=True, last_act=True)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel,is_estimator=True, last_act=False)
             
     def get_n_estimators(self):
         return self.n_estimators

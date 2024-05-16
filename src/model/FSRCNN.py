@@ -51,7 +51,7 @@ class EUNAF_FSRCNN(FSRCNN_net):
         super(EUNAF_FSRCNN, self).__init__(args, conv=conv)
         self.n_estimators = min(args.n_estimators, self.m//2)
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=True)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
 
         common.initialize_weights([self.predictors, self.estimators], 0.1)
         
@@ -72,7 +72,7 @@ class EUNAF_FSRCNN(FSRCNN_net):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n and 'tail' not in n:
+            if 'predictors' not in n and 'estimators' not in n:
                 p.requires_grad = False
             else:
                 print(n, end="; ")

@@ -39,8 +39,10 @@ if args.weight:
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
+    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
     print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=True)
+    core.load_state_dict(torch.load(args.weight), strict=False)
+    
 core.cuda()
 
 loss_func = loss.create_loss_func(args.loss)
@@ -98,6 +100,7 @@ def process_unc_map(masks, to_heatmap=True,
             # mask = torch.abs(mask)
             mask = masks[i, ...]
             if scale_independent: 
+                mask = mask[..., 4:-4, 4:-4]
                 pmin = torch.min(mask)    
                 pmax = torch.max(mask)
             
@@ -145,7 +148,7 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
     
     # masks_np = process_unc_map(masks, False, False, False)
     # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
-    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=False)
+    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=True)
     if im:
         masks_np_percentile = process_unc_map(masks, to_heatmap=False, abs=False, rescale=False)
     

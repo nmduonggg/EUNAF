@@ -1,5 +1,5 @@
-python train_eunaf_no_freeze_2block.py \
-    --template EUNAF_FSRCNNxN \
+python train_eunaf_no_freeze_carn.py \
+    --template EUNAF_CARNxN \
     --N 14 \
     --scale 4 \
     --train_stage 1 \
@@ -12,6 +12,5 @@ python train_eunaf_no_freeze_2block.py \
     --rgb_channel \
     --weight '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_x2_nb4_nf64_st0/_best.t7' \
     # --wandb \
-    
     # --lr 0.00
     # --max_load 1000
