@@ -51,9 +51,9 @@ if args.weight:
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
-    args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
-    core.load_state_dict(torch.load(args.weight), strict=False)
-    print(f"[INFO] Load weight from {args.weight}")
+    # args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
+    # core.load_state_dict(torch.load(args.weight), strict=False)
+    # print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -122,12 +122,14 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
 
 def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
     
-    final_mask = masks[-1].clone().detach() 
-    pmin = torch.amin(final_mask, dim=[2,3], keepdim=True)
-    pmax = torch.amax(final_mask, dim=[2,3], keepdim=True)
-    final_mask = (final_mask - pmin) / (pmax - pmin+ 1e-9)
     aln_loss_2 = 0.0
     for i, yf in enumerate(yfs):
+    
+        final_mask = masks[i].clone().detach() 
+        pmin = torch.amin(final_mask, dim=[2,3], keepdim=True)
+        pmax = torch.amax(final_mask, dim=[2,3], keepdim=True)
+        final_mask = (final_mask - pmin) / (pmax - pmin+ 1e-9)
+        
         if i==len(yfs)-1: continue
         yf_ = yf * final_mask
         yt_ = yt * final_mask 
@@ -136,17 +138,18 @@ def loss_alignment(yfs, masks, yt, align_biases, trainable_mask=False):
     
     all_masks = torch.stack(masks, dim=-1) # BxCxHxWxN
     all_masks = all_masks.clone().detach()
+    all_masks = F.interpolate(all_masks, scale_ratio=0.125, mode='bilinear')
     raw_indices = torch.argmin(all_masks, dim=-1)    # BxCxHxW
     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # Bx1xHxWx4
         
     fused_out = torch.zeros_like(yfs[0])
     for i, yf in enumerate(yfs):
-        onehot = onehot_indices[..., i] # Bx1xHxWxN -> Bx1xHxW
+        onehot = F.interpolate(onehot_indices[..., i], scale_ratio=8, mode='nearest').int() # Bx1xHxWxN -> Bx1xHxW
         yf = yf * onehot
         fused_out = fused_out + yf
     
-    # aln_loss = loss_func(fused_out, yt) + aln_loss_2*0.5
-    aln_loss = loss_func(fused_out, yt)
+    aln_loss = loss_func(fused_out, yt) + aln_loss_2*0.1
+    # aln_loss = loss_func(fused_out, yt)
     
     return aln_loss, fused_out
 

@@ -96,8 +96,8 @@ class EUNAF_MSRResNet(MSRResNet):
     def __init__(self, args, conv=common.default_conv):
         super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
-        self.gap = self.nb // (self.n_estimators-1)
-        gap_range = np.arange(0, self.nb, self.gap)
+        self.gap = (self.nb-2) // (self.n_estimators-1)
+        gap_range = np.arange(2, self.nb, self.gap)
         print("Locate EE at location: ", gap_range.tolist())
         
         
@@ -112,11 +112,21 @@ class EUNAF_MSRResNet(MSRResNet):
         interm_predictors = nn.ModuleList()
         
         for _ in range(num_blocks):
-            m_tail = [
-                conv(self.nf, out_channels*self.upscale*self.upscale, self.kernel_size),
-                nn.PixelShuffle(self.upscale), nn.ReLU(),
-                conv(out_channels, out_channels, 1)
-            ]
+            if is_estimator:
+                m_tail = [
+                    conv(self.nf, 16, 3), nn.LeakyReLU(0.1),
+                    conv(16, out_channels*self.upscale*self.upscale, 3),
+                    nn.PixelShuffle(self.upscale), nn.LeakyReLU(0.1),
+                    conv(out_channels, out_channels, 1)
+                ]
+            else:
+                m_tail = [
+                    conv(self.nf, self.nf, self.kernel_size),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(self.nf//4, out_channels*4, 3),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(out_channels, out_channels, 1)
+                ]
             common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -140,12 +150,12 @@ class EUNAF_MSRResNet(MSRResNet):
         
         
         fea = self.lrelu(self.conv_first(x))
-        gap_range = np.arange(0, self.nb, self.gap)
+        gap_range = np.arange(2, self.nb, self.gap)
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
             if i < self.nb-1:
-                if i in gap_range:
+                if i in gap_range[:-1]:
                     tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
                     outs.append(tmp_out+base)
                 if i==gap_range[0]:
@@ -173,12 +183,12 @@ class EUNAF_MSRResNet(MSRResNet):
         
         
         fea = self.lrelu(self.conv_first(x))
-        gap_range = np.arange(0, self.nb, self.gap)
+        gap_range = np.arange(2, self.nb, self.gap)
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
             if i < self.nb-1:
-                if i in gap_range:
+                if i in gap_range[:-1]:
                     tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
                     outs.append(tmp_out+base)
                 if i==gap_range[0]:

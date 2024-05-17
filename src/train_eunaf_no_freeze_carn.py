@@ -67,10 +67,10 @@ epochs = args.max_epochs - args.start_epoch
 num_blocks = 4
 
 trainable_params = []
-for p in core.paramteres():
+for p in core.parameters():
     if p.requires_grad: trainable_params.append(p)
 
-optimizer = Adam(trainbable_params, lr=lr, weight_decay=args.weight_decay)
+optimizer = Adam(trainable_params, lr=lr, weight_decay=args.weight_decay, betas=(0.0, 0.999))
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
 early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
@@ -117,6 +117,8 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
             mask_ = (mask_ - pmin) / (pmax - pmin)  # 0-1 scaling
         else:
             mask_ = masks[i]
+            
+        if i==len(yfs)-1: yf = yf.clone().detach()
         
         s = torch.exp(-mask_)
         yf = torch.mul(yf, s)

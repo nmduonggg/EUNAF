@@ -1,4 +1,4 @@
-python visualize_by_patches.py \
+python test_eunaf_by_patches.py \
     --template EUNAF_SRResNetxN \
     --testset_tag Test4K \
     --N 100 \
@@ -9,4 +9,4 @@ python visualize_by_patches.py \
     --scale 4 \
     --eval_tag ssim \
     --rgb_channel \
-    --visualize
+    # --visualize

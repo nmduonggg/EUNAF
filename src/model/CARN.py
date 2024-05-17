@@ -194,35 +194,40 @@ class EUNAF_CARN(CARN_M):
             if p.requires_grad:
                 print(n, end=' ')
                 
-    def forward(self, x):
+    def eunaf_forward(self, x):
         x = self.sub_mean(x)
         x = self.entry(x)
         c0 = o0 = x
 
-        ee0 = self.predictors[0](o0.clone().detach())
+
+
+        b1 = self.b1(o0)
+        
+        ee0 = self.predictors[0](b1.clone().detach())
         ee0 = self.add_mean(ee0)
         
         # get uncertainty mask
         masks = list()
         for j in range(4):
-            mask = self.estimators[j](o0.clone().detach())
+            mask = self.estimators[j](b1.clone().detach())
             masks.append(mask)
-
-        b1 = self.b1(o0)
+        
         c1 = torch.cat([c0, b1], dim=1)
         o1 = self.c1(c1)
         
-        ee1 = self.predictors[1](o1)
+        b2 = self.b2(o1)
+        
+        ee1 = self.predictors[1](b2.clone().detach())
         ee1 = self.add_mean(ee1)
         
-        b2 = self.b2(o1)
         c2 = torch.cat([c1, b2], dim=1)
         o2 = self.c2(c2)
         
-        ee2 = self.predictors[2](o2)
+        b3 = self.b3(o2)
+        
+        ee2 = self.predictors[2](b3.clone().detach())
         ee2 = self.add_mean(ee2)
         
-        b3 = self.b3(o2)
         c3 = torch.cat([c2, b3], dim=1)
         o3 = self.c3(c3)
 

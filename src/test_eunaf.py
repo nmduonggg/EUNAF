@@ -106,7 +106,7 @@ def process_unc_map(masks, to_heatmap=True,
             
             # print(f'Mask {i}:', torch.mean(mask))
             if rescale:
-                mask = (mask - pmin) / (pmax - pmin)
+                mask = (mask - pmin) / (pmax - pmin + 1e-9)
             
             mask = mask.squeeze(0).permute(1,2,0)
             agg_mask += mask
@@ -148,7 +148,7 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
     
     # masks_np = process_unc_map(masks, False, False, False)
     # masks_np_percentile = [(m > np.percentile(m, 90))*255 for m in masks_np]
-    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=True)
+    masks_np_percentile = process_unc_map(masks, scale_independent=True, amplify=False, abs=False)
     if im:
         masks_np_percentile = process_unc_map(masks, to_heatmap=False, abs=False, rescale=False)
     
@@ -519,7 +519,9 @@ def test():
             # out = core(x)
         
         yfs, masks = out
-        yf_fuse, percent = visualize_fusion_map_last(yfs, masks, batch_idx)
+        # print([(p.min(), p.max()) for p in masks])
+        
+        yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
         yf_fuse_auto, percent_auto = visualize_fusion_map(yfs, masks, batch_idx)
         yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
         yf_fuse_by_err = yf_fuse_by_err.cuda()
@@ -557,7 +559,7 @@ def test():
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        visualize_fusion_map_last(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
+        visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
         visualize_classified_map(yfs, masks, batch_idx)
         
         if args.visualize:
