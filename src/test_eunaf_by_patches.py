@@ -442,13 +442,21 @@ def fuse_classified_patch_level(p_yfs, p_masks, im_idx):
     masks = [
         np.stack([
             np.mean(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
-    max_ratio = np.mean(masks[0] / masks[-1])
+    
+    costs = np.array([0.681, 1.286, 1.890, 5.338])
+    costs = (costs - costs.min()) / (costs.max() - costs.min())
+    normalized_masks = np.stack(masks, axis=-1) 
+    normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
+    normalized_masks = normalized_masks + 0.3*costs.reshape(1, -1)
+    masks = [
+        normalized_masks[:, i] for i in range(len(yfs))
+    ]
     
     # for i, m in enumerate(masks):
-    #     print(i, np.mean(m / masks[-1]))
+    #     print(i, np.mean(m) / np.mean(masks[-1]))
     
-    rescale_range = np.linspace(1, max_ratio, 4)
-    masks[-1]*=rescale_range[1]
+    # rescale_range = np.linspace(1, max_ratio, 4)
+    # masks[-1]*=rescale_range[1]
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
@@ -621,9 +629,15 @@ def test():
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
     percent_total_auto = np.zeros(shape=[num_blocks])
+    
+    
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         # x  = x.cuda()
         # yt = yt.cuda()
+        
+        # add gausian noise
+        torch.manual_seed(0)
+        x = x + torch.randn_like(x) * 0.01
         
         # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         yt = yt.squeeze(0).permute(1,2,0).cpu().numpy()
@@ -709,6 +723,8 @@ def test():
         cur_auto_psnr, cur_auto_ssim = evaluation.calculate_all(args, fused_auto_tensor, yt)
         psnr_fuse_auto += cur_auto_psnr
         ssim_fuse_auto += cur_auto_ssim
+        
+        print(f"Img {batch_idx} - PSNR {cur_auto_psnr} - Percent {percents_auto}")
         
         if args.visualize:
             classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
