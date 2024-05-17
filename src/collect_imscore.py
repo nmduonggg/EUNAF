@@ -19,8 +19,8 @@ def get_imscore_from_path(image_path):
 
 def main():
     # initialize
-    patch_dir = '/mnt/disk1/nmduong/FusionNet/data/PATCHES_RGB/32x32/Test2K/LR/X4'
-    save_dir = './experiments/ANALYZE/EUNAF_SRResNetxN_x4_nb16_nf64_st1/Test2K/'
+    patch_dir = '/mnt/disk1/nmduong/FusionNet/data/PATCHES_RGB/8x8/Test2K/LR/X4'
+    save_dir = './experiments/ANALYZE/EUNAF_SRResNetxN_x4_nb16_nf64_st2/Test2K/'
     os.makedirs(save_dir, exist_ok=True)
     
     patch_paths = [p for p in os.listdir(patch_dir)]
@@ -34,7 +34,7 @@ def main():
         imscore = get_imscore_from_path(path) 
         imscores.append(imscore)   
         
-    np_save_file = os.path.join(save_dir, 'edge_LR_Test2K.npy')
+    np_save_file = os.path.join(save_dir, 'edge_LR_Test2K_8x8.npy')
     np.save(np_save_file, np.array(imscores))
         
 if __name__ == '__main__':
