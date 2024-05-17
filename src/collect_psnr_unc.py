@@ -58,6 +58,14 @@ num_blocks = min(args.n_estimators, num_blocks)
 psnr_map = np.zeros((len(XYtest), num_blocks))
 ssim_map = np.zeros((len(XYtest), num_blocks))
 unc_map = np.zeros((len(XYtest), num_blocks))
+edge_map = np.zeros((len(XYtest)))
+
+
+def laplacian(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
+    mask_img = cv2.convertScaleAbs(laplac)
+    return mask_img
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -67,6 +75,13 @@ def test():
     core.eval()
     # core.train()
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
+        
+        x = x + torch.randn_like(x) * 0.01
+        
+        x_np = (x.squeeze(0).permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
+        edge = laplacian(x_np).mean()
+        edge_map[batch_idx] = edge
+        
         x  = x.cuda()
         yt = yt.cuda()
         with torch.no_grad():
@@ -96,6 +111,7 @@ def test():
     np.save(os.path.join(out_dir, f'psnr_{args.testset_tag}.npy'), psnr_map)
     np.save(os.path.join(out_dir, f'ssim_{args.testset_tag}.npy'), ssim_map)
     np.save(os.path.join(out_dir, f'unc_{args.testset_tag}.npy'), unc_map)
+    np.save(os.path.join(out_dir, f'edge_{args.testset_tag}.npy'), edge_map)
     
 
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
