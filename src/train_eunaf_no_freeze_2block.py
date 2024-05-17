@@ -135,16 +135,17 @@ def loss_alignment(yfs, masks, yt, trainable_mask=False):
         yt_ = yt * final_mask 
         aln_loss_2 += loss_func(yf_, yt_)
     aln_loss_2 / (len(yfs)-1)
-    
+    masks = [
+        F.interpolate(torch.mean(torch.exp(m), dim=1, keepdim=True), scale_factor=0.25, mode='bilinear') for m in masks
+    ]
     all_masks = torch.stack(masks, dim=-1) # BxCxHxWxN
     all_masks = all_masks.clone().detach()
-    all_masks = F.interpolate(all_masks, scale_factor=0.125, mode='bilinear')
     raw_indices = torch.argmin(all_masks, dim=-1)    # BxCxHxW
     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # Bx1xHxWx4
         
     fused_out = torch.zeros_like(yfs[0])
     for i, yf in enumerate(yfs):
-        onehot = F.interpolate(onehot_indices[..., i], scale_factor=8, mode='nearest').int() # Bx1xHxWxN -> Bx1xHxW
+        onehot = F.interpolate(onehot_indices[..., i], scale_factor=4, mode='nearest').int() # Bx1xHxWxN -> Bx1xHxW
         yf = yf * onehot
         fused_out = fused_out + yf
     

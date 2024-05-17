@@ -172,16 +172,26 @@ class EUNAF_CARN(CARN_M):
         super(EUNAF_CARN, self).__init__(args)
         self.n_estimators = 4
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, last_act=False)
+        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel, is_estimator=True, last_act=False)
         
-    def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
+    def init_intermediate_out(self, num_blocks, conv, out_channels=1, is_estimator=False, last_act=False):
         interm_predictors = nn.ModuleList()
         for _ in range(num_blocks):
-            m_tail = [
-                conv(self.nf, out_channels*self.scale*self.scale, 3),
-                nn.PixelShuffle(self.scale), nn.ReLU(),
-                conv(out_channels, out_channels, 1)
-            ]
+            if is_estimator:
+                m_tail = [
+                    conv(self.nf, 16, 3), nn.LeakyReLU(0.1),
+                    conv(16, out_channels*self.scale*self.scale, 3),
+                    nn.PixelShuffle(self.scale), nn.LeakyReLU(0.1),
+                    conv(out_channels, out_channels, 1)
+                ]
+            else:
+                m_tail = [
+                    conv(self.nf, self.nf, 3),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(self.nf//4, out_channels*4, 3),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(out_channels, out_channels, 1)
+                ]
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
             
@@ -194,13 +204,55 @@ class EUNAF_CARN(CARN_M):
             if p.requires_grad:
                 print(n, end=' ')
                 
+    def forward(self, x):
+        x = self.sub_mean(x)
+        x = self.entry(x)
+        c0 = o0 = x
+        
+        b1 = self.b1(o0)
+        
+        ee0 = self.predictors[0](o0)
+        ee0 = self.add_mean(ee0)
+        
+        # get uncertainty mask
+        masks = list()
+        for j in range(4):
+            mask = self.estimators[j](o0)
+            masks.append(mask)
+        
+        c1 = torch.cat([c0, b1], dim=1)
+        o1 = self.c1(c1)
+        
+        ee1 = self.predictors[1](o1)
+        ee1 = self.add_mean(ee1)
+        
+        b2 = self.b2(o1)
+        
+        c2 = torch.cat([c1, b2], dim=1)
+        o2 = self.c2(c2)
+        
+        ee2 = self.predictors[2](o2)
+        ee2 = self.add_mean(ee2)
+        
+        b3 = self.b3(o2)
+        
+        c3 = torch.cat([c2, b3], dim=1)
+        o3 = self.c3(c3)
+
+        out = self.upsample(o3, scale=self.scale)
+
+        out = self.exit(out)
+        out = self.add_mean(out)
+        
+        outs = [ee0, ee1, ee2, out]
+
+        return outs, masks
+    
     def eunaf_forward(self, x):
         x = self.sub_mean(x)
         x = self.entry(x)
         c0 = o0 = x
-
-
-
+        
         b1 = self.b1(o0)
         
         ee0 = self.predictors[0](b1.clone().detach())
@@ -228,47 +280,6 @@ class EUNAF_CARN(CARN_M):
         ee2 = self.predictors[2](b3.clone().detach())
         ee2 = self.add_mean(ee2)
         
-        c3 = torch.cat([c2, b3], dim=1)
-        o3 = self.c3(c3)
-
-        out = self.upsample(o3, scale=self.scale)
-
-        out = self.exit(out)
-        out = self.add_mean(out)
-        
-        outs = [ee0, ee1, ee2, out]
-
-        return outs, masks
-    
-    def eunaf_forward(self, x):
-        x = self.sub_mean(x)
-        x = self.entry(x)
-        c0 = o0 = x
-
-        ee0 = self.predictors[0](o0.clone().detach())
-        ee0 = self.add_mean(ee0)
-        
-        # get uncertainty mask
-        masks = list()
-        for j in range(4):
-            mask = self.estimators[j](o0.clone().detach())
-            masks.append(mask)
-
-        b1 = self.b1(o0)
-        c1 = torch.cat([c0, b1], dim=1)
-        o1 = self.c1(c1)
-        
-        ee1 = self.predictors[1](o1.clone().detach())
-        ee1 = self.add_mean(ee1)
-        
-        b2 = self.b2(o1)
-        c2 = torch.cat([c1, b2], dim=1)
-        o2 = self.c2(c2)
-        
-        ee2 = self.predictors[2](o2.clone().detach())
-        ee2 = self.add_mean(ee2)
-        
-        b3 = self.b3(o2)
         c3 = torch.cat([c2, b3], dim=1)
         o3 = self.c3(c3)
 

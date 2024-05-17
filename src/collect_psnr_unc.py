@@ -76,7 +76,7 @@ def test():
     # core.train()
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         
-        x = x + torch.randn_like(x) * 0.01
+        x = x + torch.randn_like(x) * 0.003
         
         x_np = (x.squeeze(0).permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
         edge = laplacian(x_np).mean()
