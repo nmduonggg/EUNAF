@@ -19,8 +19,8 @@ def get_imscore_from_path(image_path):
 
 def main():
     # initialize
-    patch_dir = '/mnt/disk1/nmduong/FusionNet/data/PATCHES_RGB/32x32/Test2K/HR/X4'
-    save_dir = './experiments/ANALYZE/EUNAF_SRResNetxN_x4_nb16_nf64_st0/'
+    patch_dir = '/mnt/disk1/nmduong/FusionNet/data/PATCHES_RGB/32x32/Test2K/LR/X4'
+    save_dir = './experiments/ANALYZE/EUNAF_SRResNetxN_x4_nb16_nf64_st0/Test2K/'
     os.makedirs(save_dir, exist_ok=True)
     
     patch_paths = [p for p in os.listdir(patch_dir)]
