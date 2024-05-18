@@ -72,7 +72,7 @@ class EUNAF_FSRCNN(FSRCNN_net):
                 ]
             else:
                 m_tail = [
-                    conv(12, 48, 3),
+                    conv(56, 48, 3),
                     nn.PixelShuffle(2), nn.LeakyReLU(0.1),
                     conv(12, 12, 3),
                     nn.PixelShuffle(2), nn.LeakyReLU(0.1),
@@ -111,13 +111,12 @@ class EUNAF_FSRCNN(FSRCNN_net):
         outs, masks = list(), list()
         for i, b in enumerate(self.body_conv):
             fea = b(fea)
-            if i==0:
-                tmp_out = self.predictors[0](fea)
-                outs.append(tmp_out)
-                for j in range(self.n_estimators):
-                    m = self.estimators[j](fea)
-                    masks.append(m)
-                    
+            
+        tmp_out = self.predictors[0](fea)
+        outs.append(tmp_out)
+        for j in range(self.n_estimators):
+            m = self.estimators[j](fea)
+            masks.append(m)
         out = self.tail_conv(fea)
         outs.append(out)
         return outs, masks
