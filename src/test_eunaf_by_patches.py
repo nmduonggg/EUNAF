@@ -813,13 +813,12 @@ def test(eta):
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
     total_val_loss /= len(XYtest)
     total_mask_loss /= len(XYtest)
-    
-    print("="*50)
 
 if __name__ == '__main__':
     # get 1 patch flops
     utils.calc_flops(core, (1, 3, 32, 32))
     
-    for eta in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]:
+    # for eta in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]:
+    for eta in [0.0]:
         print("="*20, f"eta = {eta}", "="*20)
         test(eta)
