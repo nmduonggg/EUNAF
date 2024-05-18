@@ -108,10 +108,10 @@ def test(r):
         
         
     # save each file
-    np.save(os.path.join(out_dir, f'psnr_{args.testset_tag}_{r*100}.npy'), psnr_map)
-    np.save(os.path.join(out_dir, f'ssim_{args.testset_tag}_{r*100}.npy'), ssim_map)
-    np.save(os.path.join(out_dir, f'unc_{args.testset_tag}_{r*100}.npy'), unc_map)
-    np.save(os.path.join(out_dir, f'edge_{args.testset_tag}_{r*100}.npy'), edge_map)
+    np.save(os.path.join(out_dir, f'psnr_{args.testset_tag}_{r}.npy'), psnr_map)
+    np.save(os.path.join(out_dir, f'ssim_{args.testset_tag}_{r}.npy'), ssim_map)
+    np.save(os.path.join(out_dir, f'unc_{args.testset_tag}_{r}.npy'), unc_map)
+    np.save(os.path.join(out_dir, f'edge_{args.testset_tag}_{r}.npy'), edge_map)
     
 
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
@@ -123,7 +123,7 @@ def test(r):
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
 
 if __name__ == '__main__':
-    noise_rates = [0.03, 0.05]
+    noise_rates = [0.001, 0.003, 0.005, 0.01, 0.015, 0.02, 0.03]
     for r in noise_rates:
         print("Gaussian noise variance: ", r)
         test(r)
