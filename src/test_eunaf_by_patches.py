@@ -30,6 +30,16 @@ print('[INFO] load testset "%s" from %s' % (args.testset_tag, args.testset_dir))
 testset, batch_size_test = data.load_testset(args)
 XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0)
 
+cost_dict = {
+    'srresnet': [0.681, 1.286, 1.890, 5.338],
+}
+baseline_cost_dict = {
+    'srresnet': 5.194
+}
+
+cost_ees = cost_dict[args.backbone_name]
+baseline_cost = baseline_cost_dict[args.backbone_name]
+
 # model
 arch = args.core.split("-")
 name = args.template
@@ -436,18 +446,18 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     
     return classified_map
 
-def fuse_classified_patch_level(p_yfs, p_masks, im_idx):
+def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
     masks = [
         np.stack([
             np.mean(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
     
-    costs = np.array([0.681, 1.286, 1.890, 5.338])
+    costs = np.array(cost_ees)
     costs = (costs - costs.min()) / (costs.max() - costs.min())
     normalized_masks = np.stack(masks, axis=-1) 
     normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
-    normalized_masks = normalized_masks + 0.3*costs.reshape(1, -1)
+    normalized_masks = normalized_masks + eta*costs.reshape(1, -1)
     masks = [
         normalized_masks[:, i] for i in range(len(yfs))
     ]
@@ -601,12 +611,13 @@ t = 5e-3
 psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
+num_blocks = 4
 
 patch_size = 32
 step = 28
 alpha = 0.7
 
-def test():
+def test(eta):
     psnrs_val = [0 for _ in range(num_blocks)]
     ssims_val = [0 for _ in range(num_blocks)]
     uncertainty_val = [0 for _ in range(num_blocks)]
@@ -623,9 +634,6 @@ def test():
         if hasattr(m, '_prepare'):
             m._prepare()
             
-    # flops of 1 patch
-    utils.calc_flops(core, (1, 3, 32, 32))
-            
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])
     percent_total_auto = np.zeros(shape=[num_blocks])
@@ -637,7 +645,7 @@ def test():
         
         # add gausian noise
         torch.manual_seed(0)
-        x = x + torch.randn_like(x) * 0.01
+        # x = x + torch.randn_like(x) * 0.01
         
         # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         yt = yt.squeeze(0).permute(1,2,0).cpu().numpy()
@@ -717,14 +725,14 @@ def test():
         psnr_fuse_unc += cur_unc_psnr
         ssim_fuse_unc += cur_unc_ssim
         
-        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
+        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx, eta)
         fused_auto_tensor = torch.from_numpy(utils.combine(fused_auto_patches, num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0)
         percent_total_auto += np.array(percents_auto)
         cur_auto_psnr, cur_auto_ssim = evaluation.calculate_all(args, fused_auto_tensor, yt)
         psnr_fuse_auto += cur_auto_psnr
         ssim_fuse_auto += cur_auto_ssim
         
-        print(f"Img {batch_idx} - PSNR {cur_auto_psnr} - Percent {percents_auto}")
+        # print(f"Img {batch_idx} - PSNR {cur_auto_psnr} - Percent {percents_auto}")
         
         if args.visualize:
             classified_patch_map = visualize_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx)
@@ -765,6 +773,10 @@ def test():
     ssims_val = [p / len(XYtest) for p in ssims_val]
     percent_total = percent_total / len(XYtest)
     percent_total_auto /= len(XYtest)
+    
+    auto_flops = np.sum(percent_total_auto * np.array(cost_ees))
+    summary_percent = (auto_flops / baseline_cost)*100
+    print(f"Percent FLOPS: {auto_flops} - {summary_percent}")
     # percent_total_err /= len(XYtest)
     psnr_fuse = psnr_fuse / len(XYtest)
     ssim_fuse = ssim_fuse / len(XYtest)
@@ -783,14 +795,14 @@ def test():
     # print("error psnr: ", psnr_fuse_err)
     # print("error ssim: ", ssim_fuse_err)
     
-    print("unc psnr: ", psnr_fuse_unc)
-    print("unc ssim: ", ssim_fuse_unc)
+    # print("unc psnr: ", psnr_fuse_unc)
+    # print("unc ssim: ", ssim_fuse_unc)
     
-    percent_total = percent_total.tolist()
+    # percent_total = percent_total.tolist()
     # percent_total_err = percent_total_err.tolist()
-    for perc in percent_total:
-        print( f"{(perc*100):.3f}", end=' ')
-    print()
+    # for perc in percent_total:
+    #     print( f"{(perc*100):.3f}", end=' ')
+    # print()
     
     print("fusion auto psnr: ", psnr_fuse_auto)
     print("fusion auto ssim: ", ssim_fuse_auto)
@@ -801,6 +813,13 @@ def test():
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
     total_val_loss /= len(XYtest)
     total_mask_loss /= len(XYtest)
+    
+    print("="*50)
 
 if __name__ == '__main__':
-    test()
+    # get 1 patch flops
+    utils.calc_flops(core, (1, 3, 32, 32))
+    
+    for eta in [0.0, 0.1, 0.3, 0.5, 0.6, 0.7, 0.8, 1.0]:
+        print("="*20, f"eta = {eta}", "="*20)
+        test(eta)

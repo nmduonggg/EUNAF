@@ -60,23 +60,23 @@ ssim_map = np.zeros((len(XYtest), num_blocks))
 unc_map = np.zeros((len(XYtest), num_blocks))
 edge_map = np.zeros((len(XYtest)))
 
-
 def laplacian(image):
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
     mask_img = cv2.convertScaleAbs(laplac)
     return mask_img
 
-def test():
+def test(r):
     psnrs_val = [0 for _ in range(num_blocks)]
     ssims_val = [0 for _ in range(num_blocks)]
     uncertainty_val = [0 for _ in range(num_blocks)]
     
     core.eval()
     # core.train()
+    torch.manual_seed(0)
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
         
-        x = x + torch.randn_like(x) * 0.01
+        x = x + torch.randn_like(x) * r
         
         x_np = (x.squeeze(0).permute(1,2,0).cpu().numpy() * 255).astype(np.uint8)
         edge = laplacian(x_np).mean()
@@ -123,4 +123,5 @@ def test():
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
 
 if __name__ == '__main__':
-    test()
+    r = 0.0
+    test(r)

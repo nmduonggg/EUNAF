@@ -58,13 +58,27 @@ class EUNAF_FSRCNN(FSRCNN_net):
     def get_n_estimators(self):
         return self.n_estimators
         
-    def init_intermediate_out(self, num_blocks, conv, out_channels=1, last_act=False):
+    def init_intermediate_out(self, num_blocks, conv, out_channels=1, is_estimator=False, last_act=False):
+        
         interm_predictors = nn.ModuleList()
+        
         for _ in range(num_blocks):
-            m_tail = [
-                conv(self.s, self.s, 3), nn.PReLU(),
-                nn.ConvTranspose2d(in_channels=self.s, out_channels=out_channels, kernel_size=9, stride=self.upscale, padding=3, output_padding=1)
-            ]
+            if is_estimator:
+                m_tail = [
+                    conv(12, 12, 3), nn.LeakyReLU(0.1),
+                    conv(12, out_channels*self.upscale*self.upscale, 3),
+                    nn.PixelShuffle(self.upscale), nn.LeakyReLU(0.1),
+                    conv(out_channels, out_channels, 1)
+                ]
+            else:
+                m_tail = [
+                    conv(12, 48, 3),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(12, 12, 3),
+                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                    conv(3, out_channels, 1)
+                ]
+            common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
             
@@ -82,13 +96,12 @@ class EUNAF_FSRCNN(FSRCNN_net):
         outs, masks = list(), list()
         for i, b in enumerate(self.body_conv):
             fea = b(fea)
-            if i==2:
-                tmp_out = self.predictors[0](fea)
-                outs.append(tmp_out)
-                for j in range(self.n_estimators):
-                    m = self.estimators[j](fea)
-                    masks.append(m)
-                    
+            
+        tmp_out = self.predictors[0](fea)
+        outs.append(tmp_out)
+        for j in range(self.n_estimators):
+            m = self.estimators[j](fea)
+            masks.append(m)
         out = self.tail_conv(fea)
         outs.append(out)
         return outs, masks

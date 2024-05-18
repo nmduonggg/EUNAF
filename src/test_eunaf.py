@@ -490,6 +490,7 @@ t = 5e-3
 psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
+num_blocks = 4
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]

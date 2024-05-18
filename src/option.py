@@ -64,7 +64,8 @@ parser.add_argument("--checkpoint", default=None, help="checkpoint to load core 
 
 #eval
 parser.add_argument("--eval_tag", default="psnr", help="evaluation tag; available: \"psnr, ssim\"")
-
+parser.add_argument("--backbone_name", default="srresnet", help="backbone for get FLOPS", type=str)
+# parser.add_argument("--eta", default=0.5, help="eta for balancing cost and uncertainty tradeoff", type=float)
 #output
 parser.add_argument("--cv_dir", default="checkpoints", help="checkpoint directory (models and logs are saved here)")
 parser.add_argument("--analyze_dir", default="ANALYZE", help="Directory for analyze and visualize")

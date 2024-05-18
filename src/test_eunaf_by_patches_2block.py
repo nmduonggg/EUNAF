@@ -577,7 +577,7 @@ def test():
             m._prepare()
             
     # flops of 1 patch
-    utils.calc_flops_2blocks(core, (1, 3, 32, 32))
+    utils.calc_flops(core, (1, 3, 32, 32))
             
     percent_total = np.zeros(shape=[num_blocks])
     percent_total_err = np.zeros(shape=[num_blocks])

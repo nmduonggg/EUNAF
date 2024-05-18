@@ -117,7 +117,7 @@ def set_template(args):
         args.style='RGB'
         args.rgb_range=1.0
         args.input_channel=3
-        args.core='EUNAF_FSRCNN'
+        args.core='EUNAF_CARN'
         args.n_resblocks = 4
         args.reduction=16
         args.n_feats=64
