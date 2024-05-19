@@ -451,7 +451,7 @@ def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
     masks = [
         np.stack([
-            np.mean(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
+            np.mean(np.exp(pm)) * np.std(np.exp(pm)) for pm in bm], axis=0) for bm in p_masks] 
     
     costs = np.array(cost_ees)
     costs = (costs - costs.min()) / (costs.max() - costs.min())

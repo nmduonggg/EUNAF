@@ -39,8 +39,8 @@ if args.weight:
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
-    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
-    print(f"[INFO] Load weight from {args.weight}")
+    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/checkpoints/EUNAF_SRResNetxN_x4_nb16_nf64_st2/_best.t7'
+    # print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight), strict=False)
     
 core.cuda()
@@ -68,8 +68,8 @@ def process_unc_map(masks, to_heatmap=True,
     """      
     masks = torch.stack(masks, dim=0)
         
-    if abs:
-        masks = torch.exp(masks)
+    # if abs:
+        # masks = torch.exp(masks)
     
     pmin = torch.min(masks)
     pmax = torch.max(masks)
@@ -100,7 +100,6 @@ def process_unc_map(masks, to_heatmap=True,
             # mask = torch.abs(mask)
             mask = masks[i, ...]
             if scale_independent: 
-                mask = mask[..., 4:-4, 4:-4]
                 pmin = torch.min(mask)    
                 pmax = torch.max(mask)
             
@@ -242,7 +241,7 @@ def get_error_btw_F(yfs, id):
 
     return error_track
 
-def visualize_error_enhance(error_wgt, id):
+def visualize_error_enhance(error_wgt, idx):
     enhance_map = []
     new_out_dir = os.path.join(out_dir, "Error_Enhanced")
     os.makedirs(new_out_dir, exist_ok=True)
@@ -259,27 +258,26 @@ def visualize_error_enhance(error_wgt, id):
         axs[i].imshow(e)
         axs[i].set_title(f'{i}_to{i+1}')
         
-    save_file = os.path.join(new_out_dir, f"img_{id}_enhance_error.jpeg")
+    save_file = os.path.join(new_out_dir, f"img_{idx}_enhance_error.jpeg")
     plt.savefig(save_file)
     plt.close(fig)
     plt.show()
     
-def visualize_error_map(yfs, yt, id):
+def visualize_error_map(yfs, yt, idx):
     errors = []
-    save_file = os.path.join(out_dir, f"img_{id}_error.jpeg")
+    save_file = os.path.join(out_dir, f"img_{idx}_error.jpeg")
     for yf in yfs:
         error = torch.abs(yt - yf)
-        error = error.squeeze(0)
+        error = torch.mean(error, dim=1, keepdim=True).squeeze(0)
         error = error.permute(1,2,0)
         errors.append(error)
         
     # visualize_error_enhance(errors, id)
-        
-    pmin = torch.min(torch.stack(errors))
-    pmax = torch.max(torch.stack(errors))
     
     ep = []
     for e in errors:
+        pmin = torch.min(e)
+        pmax = torch.max(e)
         e = (e - pmin) / (pmax - pmin)
         e = e.cpu().numpy()
         e = (e * 255.).astype(np.uint8)
@@ -543,8 +541,8 @@ def test():
         ssim_fuse_auto += cur_ssim_fuse_auto
         
         if args.visualize:
-            visualize_histogram_im(masks, batch_idx)
-            # visualize_error_map(yfs, yt, batch_idx)
+            # visualize_histogram_im(masks, batch_idx)
+            visualize_error_map(yfs, yt, batch_idx)
             # get_error_btw_F(yfs, batch_idx)
             # visualize_unc_enhance(masks, batch_idx)
         
@@ -565,7 +563,7 @@ def test():
         
         if args.visualize:
             visualize_unc_map(
-                [m[:, :1, ...] for m in masks], 
+                [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks], 
                 batch_idx, psnr_v_layers)
             
         for i, p in enumerate(psnr_v_layers):

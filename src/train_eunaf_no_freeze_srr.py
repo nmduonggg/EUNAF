@@ -7,6 +7,7 @@ import torch
 import numpy as np
 import torch.utils.data as torchdata
 import torch.nn.functional as F
+import torch.nn as nn
 import tqdm
 import wandb
 
@@ -29,7 +30,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -51,9 +52,9 @@ if args.weight:
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
-    # args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
-    # core.load_state_dict(torch.load(args.weight), strict=False)
-    # print(f"[INFO] Load weight from {args.weight}")
+    args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
+    core.load_state_dict(torch.load(args.weight), strict=False)
+    print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -64,7 +65,17 @@ epochs = args.max_epochs - args.start_epoch
 num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(num_blocks//2, args.n_estimators)
 
-optimizer = Adam(core.parameters(), lr=lr, weight_decay=args.weight_decay)
+ee_params, tail_params = [], []
+for n, p in core.named_parameters():
+    if 'tail' not in n:
+        ee_params.append(p)
+    else:
+        tail_params.append(p)
+
+optimizer = Adam([
+        {"params": ee_params}, 
+        {"params": tail_params, "lr": 0.000003}
+    ], lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
 early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
@@ -75,23 +86,12 @@ fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_re
 out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
 os.makedirs(out_dir, exist_ok=True)
 print("Load ckpoint to: ", out_dir)
-    
-def get_error_btw_F(yfs):
-    error_track = []
-    for i in range(len(yfs)):
-        if i>=len(yfs)-1: continue
-        high_y = yfs[i+1].contiguous()
-        low_y = yfs[i].contiguous()
-        error_map = torch.abs(high_y - low_y)
-        
-        max_ = torch.amax(error_map, dim=1, keepdim=True).to(error_map.device)
-        min_ = torch.amin(error_map, dim=1, keepdim=True).to(error_map.device)
-        eta = (torch.ones_like(max_-min_)*1e-6).to(error_map.device)
-        
-        error_map = ((error_map - min_ + eta) / (max_ - min_ + eta)).type(torch.FloatTensor)
-        error_track.append(error_map)
-    
-    return error_track
+
+def loss_l1s(yfs, yt):
+    l1_loss = 0
+    for yf in yfs:
+        l1_loss += loss_func(yf, yt)
+    return l1_loss
 
 def loss_esu(yfs, masks, yt, freeze_mask=False):
     assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
@@ -119,6 +119,42 @@ def loss_esu(yfs, masks, yt, freeze_mask=False):
         esu = esu + (2*mask_.mean() + sl1_loss)
         
     return esu
+
+def loss_uncertainty_error(yfs, masks, yt, freeze_mask=False):
+    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
+    esu = 0.0
+    # mean_mask = torch.mean(torch.cat(masks, dim=0), dim=0)
+    # yt = yt.repeat(mean_yf.shape[0], 1, 1, 1)
+    ori_yt = yt.clone()
+    all_masks = torch.exp(torch.stack(masks, dim=0)).clone().detach()
+    pmin = torch.amin(all_masks, dim=0)
+    pmax = torch.amax(all_masks, dim=0)
+    
+    bce_loss = nn.BCELoss()
+    lbda = 2.0
+    
+    error_loss = 0.0
+    for i, yf in enumerate(yfs):
+        cur_err = torch.abs(yf - yt).clone().detach()
+        pmin = torch.amin(cur_err, dim=(2,3), keepdim=True)
+        pmax = torch.amax(cur_err, dim=(2,3), keepdim=True)
+        normalized_err = (cur_err - pmin) / (pmax - pmin + 1e-8)
+        
+        cur_mask = masks[i]
+        error_loss += bce_loss(torch.sigmoid(cur_mask), normalized_err) * lbda
+    
+        yf = yfs[i]
+        
+        s = torch.exp(-cur_mask)
+        yf = torch.mul(yf, s)
+        yt = torch.mul(ori_yt, s)
+        sl1_loss = loss_func(yf, yt)
+        # esu = esu + (2*cur_mask.mean() + sl1_loss)
+        esu += sl1_loss
+        
+    unc_err_loss = esu + error_loss
+        
+    return unc_err_loss
 
 def loss_alignment(yfs, masks, yt, trainable_mask=False):
     
@@ -240,8 +276,8 @@ def train():
         )
     
     best_perf = -1e9 # psnr
-    if args.train_stage > 0:
-        core.freeze_backbone()
+    # if args.train_stage > 0:
+    core.freeze_backbone()
     
     for epoch in range(epochs):
         track_dict = {}
@@ -267,9 +303,9 @@ def train():
                 perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
                 
                 if args.train_stage==0:
-                    val_loss = loss_func(outs_mean[-1], yt)
+                    val_loss = loss_l1s(outs_mean, yt)
                 elif args.train_stage==1:
-                    val_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
+                    val_loss = loss_uncertainty_error(outs_mean, masks, yt, freeze_mask=False)
                 elif args.train_stage==2:
                     # align_biases = core.align_biases
                     val_loss, val_fused = loss_alignment(outs_mean, masks, yt)
@@ -342,10 +378,10 @@ def train():
             if args.train_stage==0:
                 # for out_ in outs_mean:
                 #     train_loss += loss_func(out_, yt)
-                train_loss += loss_func(outs_mean[-1], yt)
+                train_loss += loss_l1s(outs_mean, yt)
                 # train_loss /= len(outs_mean)
             elif args.train_stage==1:
-                train_loss = loss_esu(outs_mean, masks, yt, freeze_mask=False)
+                train_loss = loss_uncertainty_error(outs_mean, masks, yt, freeze_mask=False)
             else:
                 # align_biases = core.align_biases
                 # train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
