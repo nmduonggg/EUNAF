@@ -30,7 +30,7 @@ if args.template is not None:
 
 print('[INFO] load trainset "%s" from %s' % (args.trainset_tag, args.trainset_dir))
 trainset = data.load_trainset(args)
-XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+XYtrain = torchdata.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 n_sample = len(trainset)
 print('[INFO] trainset contains %d samples' % (n_sample))
@@ -40,6 +40,16 @@ print('[INFO] load testset "%s" from %s' % (args.testset_tag, args.testset_dir))
 testset, batch_size_test = data.load_testset(args)
 XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0)
 
+cost_dict = {
+    'srresnet': [0.681, 1.286, 1.890, 5.338],
+}
+baseline_cost_dict = {
+    'srresnet': 5.194
+}
+
+cost_ees = cost_dict[args.backbone_name]
+baseline_cost = baseline_cost_dict[args.backbone_name]
+
 # model
 arch = args.core.split("-")
 name = args.template
@@ -47,14 +57,14 @@ core = supernet.config(args)
 if args.weight:
     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
     if os.path.exists(out_dir):
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
-    args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
-    core.load_state_dict(torch.load(args.weight), strict=False)
-    print(f"[INFO] Load weight from {args.weight}")
+    # args.weight = './checkpoints/PRETRAINED/SRResNet/SRResNet_branch3.pth'
+    # core.load_state_dict(torch.load(args.weight), strict=False)
+    # print(f"[INFO] Load weight from {args.weight}")
     
 core.cuda()
 
@@ -74,7 +84,7 @@ for n, p in core.named_parameters():
 
 optimizer = Adam([
         {"params": ee_params}, 
-        {"params": tail_params, "lr": 0.000003}
+        {"params": tail_params}
     ], lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7)
 early_stopper = utils.EarlyStopper(patience=15)
@@ -83,7 +93,7 @@ loss_func = loss.create_loss_func(args.loss)
 # working dir
 fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
     else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
+out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Unc-predict', fname)
 os.makedirs(out_dir, exist_ok=True)
 print("Load ckpoint to: ", out_dir)
 
@@ -155,6 +165,61 @@ def loss_uncertainty_error(yfs, masks, yt, freeze_mask=False):
     unc_err_loss = esu + error_loss
         
     return unc_err_loss
+
+def loss_error_predict(yfs, masks, yt, freeze_mask=False):
+    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
+    lbda = 2.0
+    
+    error_loss = 0.0
+    for i, yf in enumerate(yfs):
+        cur_err = torch.abs(yf - yt).clone().detach()
+        cur_mask = masks[i]
+        error_loss += loss_func(cur_mask, cur_err) 
+        
+    return error_loss
+
+def loss_unc_predict(yfs, masks, yt, freeze_mask=False):
+    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
+    lbda = 2.0
+    
+    error_loss = 0.0
+    for i, yf in enumerate(yfs):
+        cur_err = torch.abs(yf - yt).clone().detach()
+        cur_mask = masks[i] * torch.randn_like(masks[i])
+        error_loss += loss_func(cur_mask, cur_err) 
+        
+    return error_loss
+
+def loss_choose_ee(yfs, masks, yt, trainable_mask=False):
+    global cost_ees
+    all_masks = torch.stack(masks, dim=0).clone().detach()   # L,B,C,H,W
+    all_masks_mean = torch.mean(all_masks, dim=(2,3,4)) # L,B
+    
+    cost_ee = torch.tensor(cost_ees).reshape(-1, 1).to(all_masks.device)
+    cost_ee = (cost_ee - cost_ee.min()) / (cost_ee.max() - cost_ee.min() + 1e-8) * all_masks_mean.max()
+    
+    train_loss = 0.0
+    etas = [0.0, 0.3, 0.5]
+    
+    for eta in etas:
+        all_masks_mean_tmp = all_masks_mean.clone().detach()
+        all_masks_mean_tmp += (cost_ee * eta)
+        
+        all_masks_mean_tmp = torch.argmin(all_masks_mean_tmp, dim=0)
+        all_masks = F.one_hot(all_masks_mean_tmp, num_classes=len(masks)).int()   # B,L
+        bs, num_layers = all_masks.shape
+        
+        out_patches = torch.zeros_like(yfs[0])
+        for i, yf in enumerate(yfs):
+            yf = yfs[i] # BCHW
+            yf = torch.mul(yf, all_masks[..., i].reshape(bs, 1, 1, 1))
+            out_patches += yf
+        
+        loss = loss_func(out_patches, yt)
+        train_loss += loss
+    train_loss /= len(etas)
+    
+    return train_loss
 
 def loss_alignment(yfs, masks, yt, trainable_mask=False):
     
@@ -276,9 +341,13 @@ def train():
         )
     
     best_perf = -1e9 # psnr
-    # if args.train_stage > 0:
-    core.freeze_backbone()
+    if args.train_stage > 0:
+        core.freeze_backbone()
+        
+        # if args.train_stage > 1:
+            # core.enable_estimators_only()
     
+    best_val_loss = 1e9
     for epoch in range(epochs):
         track_dict = {}
         
@@ -304,12 +373,16 @@ def train():
                 
                 if args.train_stage==0:
                     val_loss = loss_l1s(outs_mean, yt)
+                    # val_loss = loss_func(outs_mean[-1], yt)
                 elif args.train_stage==1:
-                    val_loss = loss_uncertainty_error(outs_mean, masks, yt, freeze_mask=False)
-                elif args.train_stage==2:
+                    val_loss = loss_l1s(outs_mean, yt)
+                elif args.train_stage==2:   # error predict
+                    # val_loss = loss_error_predict(outs_mean, masks, yt, freeze_mask=False)
+                    val_loss = loss_unc_predict(outs_mean, masks, yt)
+                elif args.train_stage==3:
                     # align_biases = core.align_biases
-                    val_loss, val_fused = loss_alignment(outs_mean, masks, yt)
-                    perf_fused += evaluation.calculate(args, val_fused, yt)
+                    val_loss = loss_choose_ee(outs_mean, masks, yt)
+                    # perf_fused += evaluation.calculate(args, val_fused, yt)
                     
                 total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
                 
@@ -334,11 +407,10 @@ def train():
             # torch.save(core.state_dict(), os.path.join(out_dir, f'E_%d_P_%.3f.t7' % (epoch, mean_perf_f)))
             
             if args.train_stage==0:
-                if perfs_val[-1] > best_perf:
-                    
-                    best_perf = perfs_val[-1]
+                if best_val_loss > total_val_loss:
+                    best_val_loss = total_val_loss
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_val_loss))   
             elif args.train_stage==1:
                 if torch.tensor(perfs_val).mean() > best_perf:
                     
@@ -346,11 +418,17 @@ def train():
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                     print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
                     
-            elif args.train_stage==2:
-                if perf_fused > best_perf:
-                    best_perf = perf_fused
+            elif args.train_stage==2:   # error predict
+                if best_val_loss > total_val_loss:
+                    best_val_loss = total_val_loss
                     torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_perf))    
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_val_loss))    
+                    
+            elif args.train_stage==3:   # error-guided early exits
+                if best_val_loss > total_val_loss:
+                    best_val_loss = total_val_loss
+                    torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
+                    print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_val_loss))  
             
             if early_stopper.early_stop(total_val_loss):
                 break
@@ -379,13 +457,16 @@ def train():
                 # for out_ in outs_mean:
                 #     train_loss += loss_func(out_, yt)
                 train_loss += loss_l1s(outs_mean, yt)
+                # train_loss += loss_func(outs_mean[-1], yt)
                 # train_loss /= len(outs_mean)
             elif args.train_stage==1:
-                train_loss = loss_uncertainty_error(outs_mean, masks, yt, freeze_mask=False)
-            else:
+                train_loss += loss_l1s(outs_mean, yt)
+            elif args.train_stage==2:   # error predict
+                train_loss = loss_unc_predict(outs_mean, masks, yt, freeze_mask=False)
+            elif args.train_stage==3:
                 # align_biases = core.align_biases
                 # train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
-                train_loss, _ = loss_alignment(outs_mean, masks, yt)
+                train_loss += loss_choose_ee(outs_mean, masks, yt)
             
             
             optimizer.zero_grad()

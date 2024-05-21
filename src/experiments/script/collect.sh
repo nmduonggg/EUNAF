@@ -4,7 +4,7 @@ python collect_psnr_unc.py \
     --N 10097 \
     --testset_dir ../../data/PATCHES_RGB/32x32/Test2K/ \
     --analyze_dir ./experiments/ANALYZE/ \
-    --train_stage 2 \
+    --train_stage 3 \
     --n_resblocks 16 \
     --n_estimators 4 \
     --scale 4 \

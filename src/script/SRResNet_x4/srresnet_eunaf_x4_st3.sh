@@ -2,16 +2,14 @@ python train_eunaf_no_freeze_srr.py \
     --template EUNAF_SRResNetxN \
     --N 14 \
     --scale 4 \
-    --train_stage 0 \
+    --train_stage 3 \
     --max_epochs 300 \
-    --lr 0.001 \
+    --lr 0.0001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
+    --trainset_preload 100 \
     --n_estimators 4 \
-    --trainset_preload 200 \
     --rgb_channel \
-    --weight '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_x2_nb4_nf64_st0/_best.t7' \
-    # --wandb \
-
+    --weight './checkpoints/EUNAF_SRResNetxN_x2_nb16_nf64_st1/_best.t7' \
     # --lr 0.00
     # --max_load 1000

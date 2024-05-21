@@ -37,11 +37,11 @@ core = supernet.config(args)
 if args.weight:
     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', fname)
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze','Error-predict', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/checkpoints/EUNAF_SRResNetxN_x4_nb16_nf64_st2/_best.t7'
-    # print(f"[INFO] Load weight from {args.weight}")
-    core.load_state_dict(torch.load(args.weight), strict=False)
+    print(f"[INFO] Load weight from {args.weight}")
+    core.load_state_dict(torch.load(args.weight), strict=True)
     
 core.cuda()
 
@@ -183,7 +183,7 @@ def visualize_unc_map(masks, id, val_perfs, im=False):
 
 def visualize_histogram_im(masks, id):
     
-    ims = process_unc_map(masks, to_heatmap=False, rescale=True, abs=True, amplify=False)
+    ims = process_unc_map(masks, to_heatmap=False, rescale=False, abs=False, amplify=False)
     new_out_dir = out_dir
     os.makedirs(new_out_dir, exist_ok=True)
     save_file = os.path.join(new_out_dir, f"img_{id}_hist.jpeg")
@@ -196,7 +196,7 @@ def visualize_histogram_im(masks, id):
     lim = max([max(val) for val in vals])
     for i, val in enumerate(vals):
         axs[i].hist(val, 100, edgecolor='black')
-        axs[i].set_xlim(0, 100)
+        # axs[i].set_xlim(0, 100)
         axs[i].set_title(f'block {i} - mean {val.mean()} - std {np.std(val)}')
         
     plt.savefig(save_file)
@@ -301,7 +301,7 @@ def visualize_fusion_map(outs, masks, im_idx, perfs=[], visualize=False, align_b
     save_file = os.path.join(out_dir, f"img_{im_idx}_fusion.jpeg")
     # for m in masks:
     #     print(m.max(), m.min())
-    masks = [torch.exp(m) for i, m in enumerate(masks)]
+    masks = [torch.mean(m, dim=1, keepdim=True) for i, m in enumerate(masks)]
     # masks[-1] *= 1.08
     # masks[-1] *= torch.mean(masks[0], dim=[2,3], keepdim=True) / torch.mean(masks[-1], dim=[2,3], keepdim=True)
     # new_masks = list()
@@ -541,7 +541,7 @@ def test():
         ssim_fuse_auto += cur_ssim_fuse_auto
         
         if args.visualize:
-            # visualize_histogram_im(masks, batch_idx)
+            visualize_histogram_im(masks, batch_idx)
             visualize_error_map(yfs, yt, batch_idx)
             # get_error_btw_F(yfs, batch_idx)
             # visualize_unc_enhance(masks, batch_idx)
@@ -563,7 +563,7 @@ def test():
         
         if args.visualize:
             visualize_unc_map(
-                [torch.mean(torch.exp(m), dim=1, keepdim=True) for m in masks], 
+                [torch.mean(m, dim=1, keepdim=True) for m in masks], 
                 batch_idx, psnr_v_layers)
             
         for i, p in enumerate(psnr_v_layers):

@@ -20,7 +20,7 @@ parser.add_argument("--nblocks", type=int, default=1, help="Number of blocks to 
 parser.add_argument("--N", type=int, default=-1, help='Number of test instances, only used in testing')
 parser.add_argument("--n_estimators", type=int, default=4, help="Number of intermediate uncertainty estimators")
 
-parser.add_argument("--train_stage", type=int, default=0, choices=(0, 1, 2), help="Choose training stage for pretrain backbone, eunaf, align stages")
+parser.add_argument("--train_stage", type=int, default=0, choices=(0, 1, 2, 3, 4), help="Choose training stage for pretrain backbone, eunaf, align stages")
 
 # Model specifications - EDSR
 parser.add_argument('--act', type=str, default='relu',help='activation function')
