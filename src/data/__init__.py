@@ -26,6 +26,7 @@ from data.Manga109_testset import Manga109_testset
 from data.Test2K_testset import Test2K_testset
 from data.Test4K_testset import Test4K_testset
 from data.Test8K_testset import Test8K_testset
+from data.LQGT_dataset import LQGT_dataset
 
 def load_trainset(args):
     tag = args.trainset_tag
@@ -35,13 +36,18 @@ def load_trainset(args):
         return SR291_trainset(args.trainset_dir, max_load=args.max_load, lr_patch_size=args.trainset_patch_size, scale=args.scale, style=args.style, rgb_range=args.rgb_range)
     if tag == 'DIV2K':
         return DIV2K_trainset(args.trainset_dir, max_load=args.max_load, lr_patch_size=args.trainset_patch_size, scale=args.scale, style=args.style, preload=args.trainset_preload, rgb_range=args.rgb_range)
+    if tag=='LQGT':
+        return LQGT_dataset(vars(args), root_dir = args.trainset_dir, phase=args.phase)
     else:
         print('[ERRO] unknown tag and/or style for trainset')
         assert(0)
 
 def load_testset(args):
     tag = args.testset_tag
-    if tag == 'Set5B' and args.style == 'Y':
+    if tag=='LQGT':
+        batch_size_test = args.batch_size_test
+        return LQGT_dataset(vars(args), root_dir = args.testset_dir), batch_size_test
+    elif tag == 'Set5B' and args.style == 'Y':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1
         return SetN_Y_binary_testset(args.testset_dir, args.N, scale=args.scale), batch_size_test

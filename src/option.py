@@ -7,6 +7,7 @@ parser.add_argument("--lr_decay_ratio", type=float, default=0.1, help="lr *= lr_
 parser.add_argument("--weight_decay",type=float, default=1e-4, help="Weight decay, Default: 1e-4")
 
 parser.add_argument("--batch_size", type=int, default=128, help="batch size")
+parser.add_argument("--batch_size_test", type=int, default=1, help="batch size test")
 parser.add_argument("--epoch_step", type=int, default=20, help="epochs after which lr is decayed")
 parser.add_argument("--start_epoch", type=int, default=0, help="starting point")
 parser.add_argument("--max_epochs", type=int, default=300, help="total epochs to run")

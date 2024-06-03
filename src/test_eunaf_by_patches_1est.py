@@ -45,9 +45,9 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
-        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
+    fname = name[:-5]+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
+        else name[:-5]+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', '1est', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight), strict=True)
@@ -449,24 +449,18 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
 def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
-    masks = [
-        np.stack([
-            np.mean(pm) for pm in bm], axis=0) for bm in p_masks] 
+    masks = p_masks # Bx3
     
     costs = np.array(cost_ees)
     costs = (costs - costs.min()) / (costs.max() - costs.min())
-    normalized_masks = np.stack(masks, axis=-1) 
+    # normalized_masks = np.stack(masks, axis=-1) 
+    
+    normalized_masks = masks
     normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
     normalized_masks = normalized_masks + eta*costs.reshape(1, -1)
     masks = [
         normalized_masks[:, i] for i in range(len(yfs)) # PxN
     ]
-    
-    # for i, m in enumerate(masks):
-    #     print(i, np.mean(m) / np.mean(masks[-1]))
-    
-    # rescale_range = np.linspace(1, max_ratio, 4)
-    # masks[-1]*=rescale_range[1]
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
@@ -604,6 +598,33 @@ def visualize_last_psnr_map(patches, im_idx, psnrs):
     
     out_patches = [out_patches[i, :, :, :] for i in range(len(patches))]
     return out_patches
+
+def loss_unc_psnr_1est(yfs, masks, yt):
+    """
+    yfs: list of yf [BxCxHxW]x3
+    masks: Bx3
+    yt: GT
+    """
+    uscale = 40
+    psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs], dim=-1) # Bx3
+    
+    psnr_loss = loss_func(masks, -psnrs / uscale)
+    ori_yt = yt.clone()
+    
+    unc_loss = 0
+    for i in range(len(yfs)):
+        yf = yfs[i]
+        mask_ = masks[:, i]
+        
+        s = torch.exp(-mask_).reshape(-1, 1, 1, 1)
+        yf = torch.mul(yf, s)
+        yt = torch.mul(ori_yt, s)
+        sl1_loss = loss_func(yf, yt)
+        unc_loss = unc_loss + sl1_loss
+        
+    unc_loss /= len(yfs)
+    
+    return psnr_loss + unc_loss*0.1
         
 # testing
 
@@ -683,27 +704,14 @@ def test(eta):
             
             for i in range(len(p_yfs)):
                 combine_img_lists[i].append(p_yfs[i].cpu().squeeze(0).permute(1,2,0).numpy())
-                combine_unc_lists[i].append(p_masks[i].cpu().squeeze(0).permute(1,2,0).numpy())
             
         yfs, masks = list(), list()
         for i in range(num_blocks):
             yfs.append(
                 torch.from_numpy(utils.combine(combine_img_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
-            masks.append(
-                torch.from_numpy(utils.combine(combine_unc_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
+            # masks.append(
+            #     torch.from_numpy(utils.combine(combine_unc_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
             
-        yf_fuse, percent = visualize_fusion_map(yfs, masks, batch_idx)
-        # yf_fuse_by_err, percent_err = visualize_fusion_map_by_errors(yfs, yt, batch_idx)
-        
-        percent_total += percent
-        # percent_total_err += percent_err
-        cur_psnr_fuse, cur_ssim_fuse = evaluation.calculate_all(args, yf_fuse, yt)
-        # cur_psnr_fuse_err, cur_ssim_fuse_err = evaluation.calculate_all(args, yf_fuse_by_err, yt)
-        psnr_fuse += cur_psnr_fuse
-        ssim_fuse += cur_ssim_fuse
-        # psnr_fuse_err += cur_psnr_fuse_err
-        # ssim_fuse_err += cur_ssim_fuse_err
-        
         val_loss = sum([loss_func(yf, yt).item() for yf in yfs]) / num_blocks
             
         perf_v_layers = [evaluation.calculate_all(args, yf, yt) for yf in yfs]
@@ -716,17 +724,7 @@ def test(eta):
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         # error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        if args.visualize:
-            visualize_fusion_map(yfs, masks, batch_idx, perfs=psnr_v_layers+[cur_psnr_fuse], visualize=True)
-        
-        # unc_patch_map, unc_patch_indices = visualize_last_unc_map(combine_img_lists[-1], batch_idx, combine_unc_lists[-1])
-        # fused_yf_unc_patches = fuse_by_last_unc_by_patches(combine_img_lists, batch_idx, unc_patch_indices)
-        # fused_yf_tensor = torch.from_numpy(utils.combine(fused_yf_unc_patches, num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0)
-        # cur_unc_psnr, cur_unc_ssim = evaluation.calculate_all(args, fused_yf_tensor, yt)
-        # psnr_fuse_unc += cur_unc_psnr
-        # ssim_fuse_unc += cur_unc_ssim
-        
-        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx, eta)
+        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, p_masks.cpu().numpy(), batch_idx, eta)
         
         patch_psnr_1_img = list()
         for patch_f, patch_t in zip(fused_auto_patches, hr_list):

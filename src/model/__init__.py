@@ -5,6 +5,8 @@ from .SMSR import EUNAF_SMSR
 from .SRResNet import EUNAF_MSRResNet
 from .FSRCNN import EUNAF_FSRCNN
 from .CARN import EUNAF_CARN
+from .SRResNet_1est import EUNAF_MSRResNet_1est
+
 
 def config(args):
     arch = args.core.split("-")
@@ -23,6 +25,8 @@ def config(args):
         return EUNAF_FSRCNN(args)
     elif name=='EUNAF_CARN':
         return EUNAF_CARN(args)
+    elif name=='EUNAF_SRResNet_1est':
+        return EUNAF_MSRResNet_1est(args)
     
     
     else:

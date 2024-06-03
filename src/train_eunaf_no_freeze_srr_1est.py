@@ -55,17 +55,18 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
-        else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
+    fname = name[:-5] + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
+        else name[:-5] + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
     if os.path.exists(out_dir):
         args.weight = os.path.join(out_dir, '_best.t7')
         print(f"[INFO] Load weight from {args.weight}")
-        core.load_state_dict(torch.load(args.weight), strict=True)
-    args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/checkpoints/PRETRAINED/SRResNet/arm-srresnet.pth'
-    core.load_state_dict(torch.load(args.weight), strict=True)
-    print(f"[INFO] Load weight from {args.weight}")
-    
+        core.load_state_dict(torch.load(args.weight), strict=False)
+        
+# args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/jointly_nofreeze/Error-predict/EUNAF_SRResNetxN_x4_nb16_nf64_st0/_best.t7'
+# core.load_state_dict(torch.load(args.weight), strict=False)
+# print(f"[INFO] Load weight from {args.weight}")
+
 utils.calc_flops(core, (1, 3, 32, 32))
     
 core.cuda()
@@ -80,7 +81,7 @@ num_blocks = min(num_blocks//2, args.n_estimators)
 ee_params, tail_params = [], []
 for n, p in core.named_parameters():
     if p.requires_grad:
-        if 'predictors' in n or 'estimators' in n:
+        if 'predictors' in n or 'estimator' in n:
             ee_params.append(p)
         else:
             tail_params.append(p)
@@ -97,7 +98,7 @@ loss_func = loss.create_loss_func(args.loss)
 # working dir
 fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
     else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
+out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', '1est', fname)
 os.makedirs(out_dir, exist_ok=True)
 print("Load ckpoint to: ", out_dir)
 
@@ -168,71 +169,6 @@ def loss_esu_psnr(yfs, masks, yt, freeze_mask=False):
         
     return esu
 
-def loss_esu_psnr_softmax(yfs, masks, yt, freeze_mask=False):
-    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
-    esu = 0.0
-    # mean_mask = torch.mean(torch.cat(masks, dim=0), dim=0)
-    # yt = yt.repeat(mean_yf.shape[0], 1, 1, 1)
-    ori_yt = yt.clone()
-    all_masks = torch.exp(torch.stack(masks, dim=0)).clone().detach()
-    pmin = torch.amin(all_masks, dim=0)
-    pmax = torch.amax(all_masks, dim=0)
-    
-    for i in range(len(yfs)):
-        yf = yfs[i]
-        mask_ = masks[i]
-        
-        s = torch.exp(-mask_)
-        yf = torch.mul(yf, s)
-        yt = torch.mul(ori_yt, s)
-        sl1_loss = loss_func(yf, yt)
-        esu = esu + sl1_loss
-        
-        psnr = evaluation.calculate(args, yf, yt)
-    
-    all_masks = torch.mean(torch.exp(torch.stack(masks, dim=-1), dim=(1,2,3))) # BxCxHxWxL -> BxL
-    psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs], dim=1)  # -> BxL
-    dist_psnrs = torch.argmax(psnrs, dim=1) # B (label)
-    psnr_loss = nn.CrossEntropyLoss()(all_masks, dist_psnrs)
-    esu += psnr_loss
-    
-    return esu
-
-def loss_uncertainty_error(yfs, masks, yt, freeze_mask=False):
-    assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
-    esu = 0.0
-    # mean_mask = torch.mean(torch.cat(masks, dim=0), dim=0)
-    # yt = yt.repeat(mean_yf.shape[0], 1, 1, 1)
-    ori_yt = yt.clone()
-    all_masks = torch.exp(torch.stack(masks, dim=0)).clone().detach()
-    pmin = torch.amin(all_masks, dim=0)
-    pmax = torch.amax(all_masks, dim=0)
-    
-    bce_loss = nn.BCELoss()
-    lbda = 2.0
-    
-    error_loss = 0.0
-    for i, yf in enumerate(yfs):
-        cur_err = torch.abs(yf - yt).clone().detach()
-        pmin = torch.amin(cur_err, dim=(2,3), keepdim=True)
-        pmax = torch.amax(cur_err, dim=(2,3), keepdim=True)
-        normalized_err = (cur_err - pmin) / (pmax - pmin + 1e-8)
-        
-        cur_mask = masks[i]
-        error_loss += bce_loss(torch.sigmoid(cur_mask), normalized_err) * lbda
-    
-        yf = yfs[i]
-        
-        s = torch.exp(-cur_mask)
-        yf = torch.mul(yf, s)
-        yt = torch.mul(ori_yt, s)
-        sl1_loss = loss_func(yf, yt)
-        # esu = esu + (2*cur_mask.mean() + sl1_loss)
-        esu += sl1_loss
-        
-    unc_err_loss = esu + error_loss
-        
-    return unc_err_loss
 
 def loss_error_predict(yfs, masks, yt, freeze_mask=False):
     assert len(yfs)==len(masks), "yfs contains {%d}, while masks contains {%d}" % (len(yfs), len(masks))
@@ -256,37 +192,6 @@ def loss_unc_predict(yfs, masks, yt, freeze_mask=False):
         error_loss += loss_func(cur_mask, cur_err) 
         
     return error_loss
-
-def loss_choose_ee(yfs, masks, yt, trainable_mask=False):
-    global cost_ees
-    all_masks = torch.stack(masks, dim=0).clone().detach()   # L,B,C,H,W
-    all_masks_mean = torch.mean(all_masks, dim=(2,3,4)) # L,B
-    
-    cost_ee = torch.tensor(cost_ees).reshape(-1, 1).to(all_masks.device)
-    cost_ee = (cost_ee - cost_ee.min()) / (cost_ee.max() - cost_ee.min() + 1e-8) * all_masks_mean.max()
-    
-    train_loss = 0.0
-    etas = [0.0, 0.3, 0.5]
-    
-    for eta in etas:
-        all_masks_mean_tmp = all_masks_mean.clone().detach()
-        all_masks_mean_tmp += (cost_ee * eta)
-        
-        all_masks_mean_tmp = torch.argmin(all_masks_mean_tmp, dim=0)
-        all_masks = F.one_hot(all_masks_mean_tmp, num_classes=len(masks)).int()   # B,L
-        bs, num_layers = all_masks.shape
-        
-        out_patches = torch.zeros_like(yfs[0])
-        for i, yf in enumerate(yfs):
-            yf = yfs[i] # BCHW
-            yf = torch.mul(yf, all_masks[..., i].reshape(bs, 1, 1, 1))
-            out_patches += yf
-        
-        loss = loss_func(out_patches, yt)
-        train_loss += loss
-    train_loss /= len(etas)
-    
-    return train_loss
 
 def loss_alignment(yfs, masks, yt, trainable_mask=False):
     
@@ -390,7 +295,33 @@ def loss_alignment_2(yfs, masks, yt):
     aln_loss = aln_loss + loss_func(yfs[-1], yt) * 0.1
     
     return aln_loss, fused_out
+
+def loss_unc_psnr_1est(yfs, masks, yt):
+    """
+    yfs: list of yf [BxCxHxW]x3
+    masks: Bx3
+    yt: GT
+    """
+    uscale = 40
+    psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs], dim=-1) # Bx3
+    
+    psnr_loss = loss_func(masks, -psnrs / uscale)
+    ori_yt = yt.clone()
+    
+    unc_loss = 0
+    for i in range(len(yfs)):
+        yf = yfs[i]
+        mask_ = masks[:, i]
         
+        s = torch.exp(-mask_).reshape(-1, 1, 1, 1)
+        yf = torch.mul(yf, s)
+        yt = torch.mul(ori_yt, s)
+        sl1_loss = loss_func(yf, yt)
+        unc_loss = unc_loss + sl1_loss
+        
+    unc_loss /= len(yfs)
+    
+    return psnr_loss + unc_loss*0.1
 
 
 # training
@@ -453,7 +384,7 @@ def train():
                         val_loss = loss_l1s(outs_mean, yt)
                         # val_loss = loss_func(outs_mean[-1], yt)
                     elif args.train_stage==1:
-                        val_loss = loss_esu_psnr(outs_mean, masks, yt)
+                        val_loss = loss_unc_psnr_1est(outs_mean, masks, yt)
                     elif args.train_stage==2:   # error predict
                         # val_loss = loss_error_predict(outs_mean, masks, yt, freeze_mask=False)
                         val_loss = loss_unc_predict(outs_mean, masks, yt)
@@ -537,7 +468,7 @@ def train():
                 #     train_loss += loss_func(out_, yt)
                 train_loss += loss_l1s(outs_mean, yt)
             elif args.train_stage==1:
-                train_loss = loss_esu_psnr(outs_mean, masks, yt)
+                train_loss = loss_unc_psnr_1est(outs_mean, masks, yt)
             elif args.train_stage==2:   # error predict
                 train_loss = loss_unc_predict(outs_mean, masks, yt, freeze_mask=False)
             elif args.train_stage==3:

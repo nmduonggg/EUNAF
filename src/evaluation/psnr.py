@@ -13,9 +13,11 @@ def calculate_psnr(sr, hr, scale=2, rgb_range=1.0, rgb_channel=False):
         diff = diff.mul(convert).sum(dim=1)
 
     valid = diff[..., scale:-scale, scale:-scale]
-    mse = valid.pow(2).mean()
+    mse = torch.mean(valid.pow(2), dim=(1,2,3)) # B
+    
+    # mse = torch.where(mse >= 1e-9, mse, 90.)
 
-    return torch.as_tensor(-10 * math.log10(mse))
+    return torch.as_tensor(-10 * torch.log10(mse))
 
 # def calculate_psnr(sr, hr, scale=2, rgb_range=1.0, rgb_channel=False):
 #     # img1 and img2 have range [0, 255]

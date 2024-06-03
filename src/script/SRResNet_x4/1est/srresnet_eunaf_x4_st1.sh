@@ -1,9 +1,9 @@
-python train_eunaf_no_freeze_srr.py \
-    --template EUNAF_SRResNetxN \
+python train_eunaf_no_freeze_srr_1est.py \
+    --template EUNAF_SRResNetxN_1est \
     --N 14 \
     --scale 4 \
-    --train_stage 0 \
-    --max_epochs 30 \
+    --train_stage 1 \
+    --max_epochs 20 \
     --lr 0.001 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \

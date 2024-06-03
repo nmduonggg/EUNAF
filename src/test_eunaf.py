@@ -49,7 +49,7 @@ loss_func = loss.create_loss_func(args.loss)
 
 # working dir
 # out_dir = os.path.join(args.analyze_dir, args.template, name+f'_nblock{args.nblocks}', args.testset_tag)
-out_dir = os.path.join(args.analyze_dir, name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}', args.testset_tag)
+out_dir = os.path.join(args.analyze_dir, 'Error-predict', name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}', args.testset_tag)
 print('Load to: ', out_dir)
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
@@ -488,7 +488,6 @@ t = 5e-3
 psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
-num_blocks = 4
 
 def test():
     psnrs_val = [0 for _ in range(num_blocks)]

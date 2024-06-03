@@ -92,41 +92,63 @@ class MSRResNet(nn.Module):
         out += base
         return out
     
-class EUNAF_MSRResNet(MSRResNet):
+class Estimator(nn.Module):
+    def __init__(self):
+        super(Estimator, self).__init__()
+        self.lastOut = nn.Linear(32, 3)
+
+        # Condtion network
+        self.CondNet = nn.Sequential(nn.Conv2d(3, 128, 4, 4), nn.LeakyReLU(0.1),
+                                     nn.Conv2d(128, 128, 1), nn.LeakyReLU(0.1),
+                                     nn.Conv2d(128, 128, 1), nn.LeakyReLU(0.1),
+                                     nn.Conv2d(128, 128, 1), nn.LeakyReLU(0.1),
+                                     nn.Conv2d(128, 32, 1))
+        common.initialize_weights([self.CondNet], 0.1)
+    def forward(self, x):
+        out = self.CondNet(x)
+        out = nn.AvgPool2d(out.size()[2])(out)
+        out = out.view(out.size(0), -1)
+        out = self.lastOut(out)
+        return out
+    
+class EUNAF_MSRResNet_1est(MSRResNet):
     def __init__(self, args, conv=common.default_conv):
-        super(EUNAF_MSRResNet, self).__init__(args, conv=conv) 
+        super(EUNAF_MSRResNet_1est, self).__init__(args, conv=conv) 
         self.n_estimators = min(args.n_estimators, self.nb // 2)
-        self.gap = (self.nb-2) // (self.n_estimators-1)
-        gap_range = np.arange(2, self.nb, self.gap)
-        print("Locate EE at location: ", gap_range.tolist())
-        
-        
+
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=False)
-        self.estimators = self.init_intermediate_out(self.n_estimators, conv, out_channels=args.input_channel,is_estimator=True, last_act=False)
+        self.estimator = Estimator()
             
     def get_n_estimators(self):
         return self.n_estimators
         
-    def init_intermediate_out(self, num_blocks, conv, out_channels=1, is_estimator=False, last_act=False):
+    def init_intermediate_out(self, num_blocks, conv,
+                              out_channels=1, is_estimator=False, 
+                              last_act=False):
         
         interm_predictors = nn.ModuleList()
         
-        for _ in range(num_blocks):
+        for i in range(num_blocks):
             if is_estimator:
-                m_tail = [
-                    conv(self.nf, 16, 3), nn.LeakyReLU(0.1),
-                    conv(16, out_channels*self.upscale*self.upscale, 3),
-                    nn.PixelShuffle(self.upscale), nn.LeakyReLU(0.1),
-                    conv(out_channels, out_channels, 1)
-                ]
+                return self.estimator
             else:
-                m_tail = [
-                    conv(self.nf, self.nf, self.kernel_size),
-                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                    conv(self.nf//4, out_channels*4, 3),
-                    nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                    conv(out_channels, out_channels, 1)
-                ]
+                
+                if i==num_blocks-1:
+                    m_tail = [
+                        conv(self.nf, self.nf*4, 3),
+                        nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                        conv(self.nf, self.nf, 3),
+                        nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                        conv(self.nf//4, out_channels, 3)
+                    ] 
+                else:
+                    m_tail = [
+                        conv(self.nf, self.nf*2, self.kernel_size),
+                        nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                        conv(self.nf//2, out_channels*4, 3),
+                        nn.PixelShuffle(2), nn.LeakyReLU(0.1),
+                        conv(out_channels, out_channels, 1)
+                    ]
             common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -135,40 +157,39 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def freeze_backbone(self):
         for n, p in self.named_parameters():
-            if 'predictors' not in n and 'estimators' not in n:
+            if 'estimator' not in n:
                 p.requires_grad = False
-                # for i in range(self.nb):
-                #     if i > (self.nb - self.n_estimators)-1 and 'recon_trunk' in n and str(i) in n:
-                #         p.requires_grad=True
             if p.requires_grad:
                 print(n, end=' ')
     
     def enable_estimators_only(self):
         for n, p in self.named_parameters():
-            if 'estimators' not in n:
+            if 'estimator' not in n:
                 p.requires_grad = False
             if p.requires_grad:
                 print(n, end=' ')
     
     def forward(self, x):
         
-        outs, masks = list(), list()
+        masks = self.estimator(x)   # Bx3
+        
+        outs = list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         
         
         fea = self.lrelu(self.conv_first(x))
-        gap_range = np.arange(2, self.nb, self.gap)
+        # gap_range = np.arange(2, self.nb, self.gap)
+        # tmp_gap_range = self.gap_range[:-1] if len(gap_range)==self.n_estimators else self.gap_range
+        tmp_gap_range = [self.nb-1, self.nb-1]
+        
+        cnt = 0
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
-            if i < self.nb-1:
-                if i in gap_range[:-1]:
-                    tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
+            if i == self.nb-1:
+                for j in range(self.n_estimators-1):
+                    tmp_out = self.predictors[j](fea)
                     outs.append(tmp_out+base)
-                if i==gap_range[0]:
-                    for j in range(self.n_estimators):
-                        mask = self.estimators[j](fea)
-                        masks.append(mask)
                         
         if self.upscale == 4:
             fea = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
@@ -185,23 +206,25 @@ class EUNAF_MSRResNet(MSRResNet):
     
     def eunaf_forward(self, x):
         
-        outs, masks = list(), list()
+        masks = self.estimator(x)   # Bx3
+        
+        outs = list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
         
         
         fea = self.lrelu(self.conv_first(x))
-        gap_range = np.arange(2, self.nb, self.gap)
+        # gap_range = np.arange(2, self.nb, self.gap)
+        # tmp_gap_range = self.gap_range[:-1] if len(gap_range)==self.n_estimators else self.gap_range
+        tmp_gap_range = [self.nb-1, self.nb-1]
+        
+        cnt = 0
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
-            if i < self.nb-1:
-                if i in gap_range[:-1]:
-                    tmp_out = self.predictors[np.where(gap_range==i)[0][0]](fea)
+            if i == self.nb-1:
+                for j in range(self.n_estimators-1):
+                    tmp_out = self.predictors[j](fea)
                     outs.append(tmp_out+base)
-                if i==gap_range[0]:
-                    for j in range(self.n_estimators):
-                        mask = self.estimators[j](fea)
-                        masks.append(mask)
                         
         if self.upscale == 4:
             fea = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
