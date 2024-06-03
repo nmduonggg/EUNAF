@@ -2,3 +2,4 @@ src/wandb
 src/checkpoints 
 src/ANALYZE
 src/__pycache__
+checkpoints
