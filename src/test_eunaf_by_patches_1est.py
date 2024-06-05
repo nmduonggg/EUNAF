@@ -45,8 +45,8 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    fname = name[:-5]+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
-        else name[:-5]+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
+    fname = name + f"_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}" if args.n_resgroups > 0 \
+        else name + f"_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}"
     out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', '1est', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
@@ -449,13 +449,13 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
 def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
-    masks = p_masks # Bx3
+    masks = [np.concatenate(pm, axis=0) for pm in p_masks] # Bx3
     
     costs = np.array(cost_ees)
     costs = (costs - costs.min()) / (costs.max() - costs.min())
     # normalized_masks = np.stack(masks, axis=-1) 
     
-    normalized_masks = masks
+    normalized_masks = np.stack(masks, axis=1)
     normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
     normalized_masks = normalized_masks + eta*costs.reshape(1, -1)
     masks = [
@@ -682,7 +682,6 @@ def test(eta):
         hr_list = utils.crop_cpu(y_np, patch_size * args.scale, step*args.scale)[0]
         yt = yt[:, :, :h*args.scale, :w*args.scale]
         
-        
         combine_img_lists = [list() for _ in range(num_blocks)]
         combine_unc_lists = [list() for _ in range(num_blocks)]
         all_last_psnrs = list()
@@ -704,8 +703,10 @@ def test(eta):
             
             for i in range(len(p_yfs)):
                 combine_img_lists[i].append(p_yfs[i].cpu().squeeze(0).permute(1,2,0).numpy())
+                combine_unc_lists[i].append(p_masks[:, i].cpu())
             
-        yfs, masks = list(), list()
+        yfs = list()
+        masks = [p_masks[:, i].detach() for i in range(p_masks.shape[1])]
         for i in range(num_blocks):
             yfs.append(
                 torch.from_numpy(utils.combine(combine_img_lists[i], num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0))
@@ -724,7 +725,7 @@ def test(eta):
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         # error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, p_masks.cpu().numpy(), batch_idx, eta)
+        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx, eta)
         
         patch_psnr_1_img = list()
         for patch_f, patch_t in zip(fused_auto_patches, hr_list):
@@ -828,7 +829,7 @@ if __name__ == '__main__':
     # get 1 patch flops
     utils.calc_flops(core, (1, 3, 32, 32))
     
-    # for eta in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]:
-    for eta in [0.9, 0.92, 0.95, 0.97, 1.0]:
+    for eta in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]:
+    # for eta in [0.0, 0.92, 0.95, 0.97, 1.0]:
         print("="*20, f"eta = {eta}", "="*20)
         test(eta)

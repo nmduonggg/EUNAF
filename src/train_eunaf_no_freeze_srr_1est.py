@@ -63,9 +63,9 @@ if args.weight:
         print(f"[INFO] Load weight from {args.weight}")
         core.load_state_dict(torch.load(args.weight), strict=False)
         
-# args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/jointly_nofreeze/Error-predict/EUNAF_SRResNetxN_x4_nb16_nf64_st0/_best.t7'
-# core.load_state_dict(torch.load(args.weight), strict=False)
-# print(f"[INFO] Load weight from {args.weight}")
+args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/jointly_nofreeze/Error-predict/1est/EUNAF_SRResNetxN_1est_x4_nb16_nf64_st1/_best.t7'
+core.load_state_dict(torch.load(args.weight), strict=True)
+print(f"[INFO] Load weight from {args.weight}")
 
 utils.calc_flops(core, (1, 3, 32, 32))
     

@@ -37,7 +37,7 @@ core = supernet.config(args)
 if args.weight:
     fname = name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage}' if args.n_resgroups > 0 \
         else name+f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', '1est', fname)
     args.weight = os.path.join(out_dir, '_best.t7')
     print(f"[INFO] Load weight from {args.weight}")
     core.load_state_dict(torch.load(args.weight), strict=True)
@@ -54,6 +54,7 @@ if not os.path.exists(out_dir):
     
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
+num_blocks = 3
 
 psnr_map = np.zeros((len(XYtest), num_blocks))
 ssim_map = np.zeros((len(XYtest), num_blocks))
@@ -94,7 +95,7 @@ def test(r):
         for i, v in enumerate(perf_v_layers):
             psnr_v_layers.append(v[0].item())
             ssim_v_layers.append(v[1].item())
-        unc_v_layers = [m.mean().cpu().item() for m in masks]
+        unc_v_layers = [masks[:, i].cpu().item() for i in range(masks.shape[1])]
         
         # store value
         psnr_map[batch_idx, :] = np.array(psnr_v_layers).reshape(1, -1)
@@ -104,14 +105,12 @@ def test(r):
         for i, p in enumerate(psnr_v_layers):
             psnrs_val[i] = psnrs_val[i] + p
             ssims_val[i] += ssim_v_layers[i]
-            uncertainty_val[i] = uncertainty_val[i] + torch.exp(masks[i]).contiguous().cpu().mean()
-        
         
     # save each file
-    np.save(os.path.join(out_dir, f'log_psnr_{args.testset_tag}_{r}.npy'), psnr_map)
-    np.save(os.path.join(out_dir, f'log_ssim_{args.testset_tag}_{r}.npy'), ssim_map)
-    np.save(os.path.join(out_dir, f'log_unc_{args.testset_tag}_{r}.npy'), unc_map)
-    np.save(os.path.join(out_dir, f'log_edge_{args.testset_tag}_{r}.npy'), edge_map)
+    np.save(os.path.join(out_dir, f'psnr_{args.testset_tag}_{r}.npy'), psnr_map)
+    np.save(os.path.join(out_dir, f'ssim_{args.testset_tag}_{r}.npy'), ssim_map)
+    np.save(os.path.join(out_dir, f'unc_{args.testset_tag}_{r}.npy'), unc_map)
+    np.save(os.path.join(out_dir, f'edge_{args.testset_tag}_{r}.npy'), edge_map)
     
 
     psnrs_val = [p / len(XYtest) for p in psnrs_val]
@@ -123,7 +122,7 @@ def test(r):
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
 
 if __name__ == '__main__':
-    noise_rates = [0.0]
+    noise_rates = [0.0, 0.01, 0.02]
     for r in noise_rates:
         print("Gaussian noise variance: ", r)
         test(r)
