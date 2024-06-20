@@ -127,12 +127,34 @@ def set_template(args):
         args.n_feats=56
         args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
         print(vars(args))
+    elif  args.template == 'EUNAF_FSRCNNxN_1est':
+        print('[INFO] Template found (FSRCNN SR)')
+        args.style='RGB'
+        args.rgb_range=1.0
+        args.input_channel=3
+        args.core='EUNAF_FSRCNN_1est'
+        args.n_resblocks = 4
+        args.reduction=16
+        args.n_feats=56
+        args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
+        print(vars(args))
     elif  args.template == 'EUNAF_CARNxN':
         print('[INFO] Template found (SRResNet SR)')
         args.style='RGB'
         args.rgb_range=1.0
         args.input_channel=3
         args.core='EUNAF_CARN'
+        args.n_resblocks = 4
+        args.reduction=16
+        args.n_feats=64
+        args.weight = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/EUNAF_EDSRx2_bl_nblock1/_best.t7"
+        print(vars(args))
+    elif  args.template == 'EUNAF_CARNxN_1est':
+        print('[INFO] Template found (CARN SR)')
+        args.style='RGB'
+        args.rgb_range=1.0
+        args.input_channel=3
+        args.core='EUNAF_CARN_1est'
         args.n_resblocks = 4
         args.reduction=16
         args.n_feats=64

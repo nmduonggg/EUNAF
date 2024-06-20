@@ -7,6 +7,7 @@ python test_eunaf_by_patches_1est.py \
     --n_resblocks 16 \
     --n_estimators 3 \
     --scale 4 \
-    --eval_tag ssim \
+    --eval_tag psnr \
     --rgb_channel \
+    --backbone_name srresnet
     # --visualize

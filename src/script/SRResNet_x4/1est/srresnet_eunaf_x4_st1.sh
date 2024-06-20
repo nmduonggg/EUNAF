@@ -3,8 +3,8 @@ python train_eunaf_no_freeze_srr_1est.py \
     --N 14 \
     --scale 4 \
     --train_stage 1 \
-    --max_epochs 20 \
-    --lr 0.00001 \
+    --max_epochs 30 \
+    --lr 0.00005 \
     --testset_tag='Set14RGB' \
     --testset_dir='../../data/' \
     --n_estimators 3 \

@@ -13,22 +13,28 @@ class Test4K_testset(Dataset):
         self.X, self.Y = [], []
         self.scale = scale
         self.root = root
+        self.style = style
+        self.rgb_range = rgb_range
         
-        for i in tqdm.tqdm(range(self.N_raw_image)):
-            fn = str(1301+i) + '.png'
-            X_im_file_name = self.root + 'LR/' +f'X{self.scale}/' + fn
-            X_data = load_image_as_Tensor(X_im_file_name, style, rgb_range)
-            self.X.append(X_data)
+        # for i in tqdm.tqdm(range(self.N_raw_image)):
+        #     fn = str(1301+i) + '.png'
+        #     X_im_file_name = self.root + 'LR/' +f'X{self.scale}/' + fn
+        #     X_data = load_image_as_Tensor(X_im_file_name, style, rgb_range)
+        #     self.X.append(X_data)
 
-            Y_im_file_name = self.root + 'HR/X4/' + fn
-            Y_data = load_image_as_Tensor(Y_im_file_name, style, rgb_range)
-            self.Y.append(Y_data)
+        #     Y_im_file_name = self.root + 'HR/X4/' + fn
+        #     Y_data = load_image_as_Tensor(Y_im_file_name, style, rgb_range)
+        #     self.Y.append(Y_data)
 
     def __len__(self):
         return self.N
 
     def __getitem__(self, idx):
-        im_lr = self.X[idx]
-        im_hr = self.Y[idx]
+        fn = str(1301+idx) + '.png'
+        X_im_file_name = self.root + 'LR/' + f'X{self.scale}/' + fn  
+        X_data = load_image_as_Tensor(X_im_file_name, self.style, self.rgb_range)
+        
+        Y_im_file_name = self.root + 'HR/X4/' + fn
+        Y_data = load_image_as_Tensor(Y_im_file_name, self.style, self.rgb_range)
 
-        return im_lr, im_hr
+        return X_data, Y_data

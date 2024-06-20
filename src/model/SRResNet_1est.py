@@ -95,7 +95,7 @@ class MSRResNet(nn.Module):
 class Estimator(nn.Module):
     def __init__(self):
         super(Estimator, self).__init__()
-        self.lastOut = nn.Linear(32, 3)
+        self.lastOut = nn.Linear(32, 4)
 
         # Condtion network
         self.CondNet = nn.Sequential(nn.Conv2d(3, 128, 4, 4), nn.LeakyReLU(0.1),
@@ -137,18 +137,20 @@ class EUNAF_MSRResNet_1est(MSRResNet):
                     m_tail = [
                         conv(self.nf, self.nf*4, 3),
                         nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                        conv(self.nf, self.nf, 3),
+                        conv(self.nf, self.nf*2, 3),
                         nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                        conv(self.nf//4, out_channels, 3)
+                        conv(self.nf//2, self.nf//2, 3), nn.LeakyReLU(0.1),
+                        conv(self.nf//2, out_channels, 3)
                     ] 
                 else:
                     m_tail = [
-                        conv(self.nf, self.nf*2, self.kernel_size),
+                        conv(self.nf, self.nf*4, 3),
                         nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                        conv(self.nf//2, out_channels*4, 3),
+                        conv(self.nf, self.nf, 3),
                         nn.PixelShuffle(2), nn.LeakyReLU(0.1),
-                        conv(out_channels, out_channels, 1)
-                    ]
+                        conv(self.nf//4, self.nf//4, 3), nn.LeakyReLU(0.1),
+                        conv(self.nf//4, out_channels, 1)
+                    ]       
             common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
             interm_predictors.append(nn.Sequential(*m_tail))
@@ -175,7 +177,9 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         
         outs = list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
-        
+        outs.append(
+            F.interpolate(x, scale_factor=self.upscale, mode='bicubic', align_corners=False)
+        )
         
         fea = self.lrelu(self.conv_first(x))
         # gap_range = np.arange(2, self.nb, self.gap)
@@ -186,10 +190,13 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
-            if i == self.nb-1:
-                for j in range(self.n_estimators-1):
-                    tmp_out = self.predictors[j](fea)
-                    outs.append(tmp_out+base)
+            if i == 8:  # ee 1
+                tmp_out = self.predictors[0](fea)
+                outs.append(tmp_out + base)
+            
+            if i == self.nb-1:  # ee 2
+                tmp_out = self.predictors[1](fea)
+                outs.append(tmp_out+base)
                         
         if self.upscale == 4:
             fea = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
@@ -199,7 +206,6 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         out = self.conv_last(self.lrelu(self.HRconv(out)))  
         
         out += base
-        
         outs.append(out)
                         
         return outs, masks
@@ -210,7 +216,9 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         
         outs = list()
         base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
-        
+        outs.append(
+            F.interpolate(x, scale_factor=self.upscale, mode='bicubic', align_corners=False)
+        )
         
         fea = self.lrelu(self.conv_first(x))
         # gap_range = np.arange(2, self.nb, self.gap)
@@ -221,10 +229,13 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         for i in range(self.nb):
             fea = self.recon_trunk[i](fea)
             
-            if i == self.nb-1:
-                for j in range(self.n_estimators-1):
-                    tmp_out = self.predictors[j](fea)
-                    outs.append(tmp_out+base)
+            if i == 8:  # ee 1
+                tmp_out = self.predictors[0](fea)
+                outs.append(tmp_out + base)
+            
+            if i == self.nb-1:  # ee 2
+                tmp_out = self.predictors[1](fea)
+                outs.append(tmp_out+base)
                         
         if self.upscale == 4:
             fea = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
@@ -234,7 +245,6 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         out = self.conv_last(self.lrelu(self.HRconv(out)))  
         
         out += base
-        
         outs.append(out)
                         
         return outs, masks

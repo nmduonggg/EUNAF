@@ -46,7 +46,7 @@ def load_testset(args):
     tag = args.testset_tag
     if tag=='LQGT':
         batch_size_test = args.batch_size_test
-        return LQGT_dataset(vars(args), root_dir = args.testset_dir), batch_size_test
+        return LQGT_dataset(vars(args), root_dir = args.testset_dir, phase='test'), batch_size_test
     elif tag == 'Set5B' and args.style == 'Y':
         print('[WARN] RGB range (<rgb_range>) set to 1.0')
         batch_size_test = 1

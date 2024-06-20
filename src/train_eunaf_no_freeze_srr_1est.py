@@ -41,10 +41,12 @@ testset, batch_size_test = data.load_testset(args)
 XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=4)
 
 cost_dict = {
-    'srresnet': [0.681, 1.286, 1.890, 5.338],
+    'srresnet': [0, 2.04698, 3.66264, 5.194], 
+    'fsrcnn': [0, 146.42, 315.45, 468.2]
 }
 baseline_cost_dict = {
-    'srresnet': 5.194
+    'srresnet': 5.194,
+    'fsrcnn': 468.2
 }
 
 cost_ees = cost_dict[args.backbone_name]
@@ -55,17 +57,32 @@ arch = args.core.split("-")
 name = args.template
 core = supernet.config(args)
 if args.weight:
-    fname = name[:-5] + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
-        else name[:-5] + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
-    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', fname)
-    if os.path.exists(out_dir):
-        args.weight = os.path.join(out_dir, '_best.t7')
-        print(f"[INFO] Load weight from {args.weight}")
-        core.load_state_dict(torch.load(args.weight), strict=False)
+    fname = name + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_ng{args.n_resgroups}_st{args.train_stage-1}' if args.n_resgroups > 0 \
+        else name + f'_x{args.scale}_nb{args.n_resblocks}_nf{args.n_feats}_st{args.train_stage-1}'
+    out_dir = os.path.join(args.cv_dir, 'jointly_nofreeze', 'Error-predict', '1est', fname)
+    args.weight = os.path.join(out_dir, '_best.t7')
         
-args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/jointly_nofreeze/Error-predict/1est/EUNAF_SRResNetxN_1est_x4_nb16_nf64_st1/_best.t7'
-core.load_state_dict(torch.load(args.weight), strict=True)
-print(f"[INFO] Load weight from {args.weight}")
+    # current_model_dict = core.state_dict()
+    loaded_state_dict = torch.load(args.weight, map_location=torch.device('cpu'))
+    # new_state_dict={k:v if v.size()==current_model_dict[k].size()  else  current_model_dict[k] for k,v in zip(current_model_dict.keys(), loaded_state_dict.values())}
+    
+    print(f"[INFO] Load weight from {args.weight}")
+    core.load_state_dict(loaded_state_dict, strict=True)
+        
+    # # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/checkpoints/PRETRAINED/SRResNet/arm-srresnet.pth'
+    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/FSRCNN/arm-fsrcnn.pth'
+    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/PRETRAINED/CARN/arm-carn.pth'
+    # core.load_state_dict(torch.load(args.weight), strict=False)
+    # print(f"[INFO] Load weight from {args.weight}")
+        
+    # args.weight = '/mnt/disk1/nmduong/FusionNet/Supernet-SR/src/checkpoints/jointly_nofreeze/Error-predict/1est/EUNAF_SRResNetxN_1est_x4_nb16_nf64_st0/_best.t7'
+    # pretrained_dict = torch.load(args.weight, map_location='cpu')
+    
+    # for k, v in pretrained_dict.items():
+    #     print(k)
+    
+    # core.load_state_dict(torch.load(args.weight), strict=True)
+    # print(f"[INFO] Load weight from {args.weight}")
 
 utils.calc_flops(core, (1, 3, 32, 32))
     
@@ -78,19 +95,27 @@ epochs = args.max_epochs - args.start_epoch
 num_blocks = args.n_resgroups if args.n_resgroups > 0 else args.n_resblocks
 num_blocks = min(num_blocks//2, args.n_estimators)
 
-ee_params, tail_params = [], []
+num_blocks = 4
+
+# params = []
+# for n, p in core.named_parameters():
+#     if p.requires_grad:
+#        params.append(p)
+    
+ee_params, tail_params = list(), list()
 for n, p in core.named_parameters():
     if p.requires_grad:
-        if 'predictors' in n or 'estimator' in n:
-            ee_params.append(p)
+        if 'estimator' in n or 'predictor' in n:
+            ee_params.append(p) 
         else:
             tail_params.append(p)
-            
 
 optimizer = Adam([
         {"params": ee_params}, 
         {"params": tail_params, 'lr': 1e-8}
     ], lr=lr, weight_decay=args.weight_decay)
+
+# optimizer = Adam(params, lr=lr, weight_decay=args.weight_decay)
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
 early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
@@ -104,10 +129,7 @@ print("Load ckpoint to: ", out_dir)
 
 def loss_l1s(yfs, yt):
     l1_loss = 0
-    for i, yf in enumerate(yfs):
-        if i==len(yfs)-1:
-            l1_loss += loss_func(yf, yt)
-            continue
+    for i, yf in enumerate(yfs[1:]):    # skip bicubic
         l1_loss += loss_func(yf, yt)
     return l1_loss
 
@@ -302,10 +324,24 @@ def loss_unc_psnr_1est(yfs, masks, yt):
     masks: Bx3
     yt: GT
     """
-    uscale = 40
-    psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs], dim=-1) # Bx3
+    uscale = 1
+    alpha = 0.0
+    yfs = [yf.clone() for yf in yfs]
+    psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs[1:]], dim=-1) # Bx3
+    psnr_loss = 0.0
     
-    psnr_loss = loss_func(masks, -psnrs / uscale)
+    for i in range(len(yfs)):
+        psnr0 = evaluation.calculate(args, yfs[i], yt).unsqueeze(1)
+        mask0 = torch.where(psnr0 != float("inf"), 1., 0.).bool()
+        psnr0 = psnr0[mask0]
+        # print(psnrs)
+        
+        mask_0_ = masks[..., i:i+1][mask0]
+        psnr_0_loss = loss_func(mask_0_, -psnr0/uscale)
+        
+        psnr_loss += psnr_0_loss
+    psnr_loss /= len(yfs)
+    
     ori_yt = yt.clone()
     
     unc_loss = 0
@@ -321,7 +357,41 @@ def loss_unc_psnr_1est(yfs, masks, yt):
         
     unc_loss /= len(yfs)
     
-    return psnr_loss + unc_loss*0.1
+    return psnr_loss + unc_loss*alpha
+
+def loss_finetune_eta_1est(yfs, masks, yt, cost_ee):
+    """
+    yfs: list of yf [BxCxHxW]x3
+    masks: Bx3
+    yt: GT
+    """
+    uscale = 1
+    alpha = 0.0
+    # psnrs = torch.stack([evaluation.calculate(args, yf, yt) for yf in yfs[1:]], dim=-1) # Bx3
+    psnr_loss = 0.0
+    trainable_ee_mask = masks[:, 1:].clone().detach()    # skip bicubic at 0
+    
+    norm_ee_mask = trainable_ee_mask - torch.amin(trainable_ee_mask, dim=1, keepdim=True) \
+        / (torch.amax(trainable_ee_mask, dim=1, keepdim=True) - torch.amin(trainable_ee_mask, dim=1, keepdim=True) + 1e-9)
+    
+    if cost_ee.size(1)==4:
+        cost_ee = cost_ee[:, 1:]
+    norm_cost = cost_ee - cost_ee.amin(cost_ee, dim=1, keepdim=True) \
+        / (torch.amax(cost_ee, dim=1, keepdim=True) - torch.amin(cost_ee, dim=1, keepdim=True) + 1e-9)
+        
+    bs = norm_all.size(0)
+    norm_all == norm_ee_mask + norm_cost * torch.rand(bs, 1).to(norm_cost.device)
+    
+    indices = torch.argmin(norm_all, dim=1)  # B
+    onehot_indices = F.one_hot(indices, num_classes=len(yfs)-1) # Bx(N-1)
+    
+    l1_loss = 0
+    for i, yf in enumerate(yfs[1:]):    # skip bicubic
+        yf = torch.mul(yf, onehot_indices[:, i:i+1])
+        yt = torch.mul(yt, onehot_indices[:, i:i+1])
+        l1_loss += loss_func(yf, yt)
+    
+    return l1_loss
 
 
 # training
@@ -340,11 +410,12 @@ def train():
     
     step_counter = 0
     best_perf = -1e9 # psnr
+    
+    cost_ee = np.array(cost_dict[args.backbone_name]) / baseline_cost_dict[args.backbone_name]
+    cost_ee = torch.tensor(cost_ee).unsqueeze(0)    # 1xN
+    
     if args.train_stage > 0:
-        core.freeze_backbone()
-        
-        # if args.train_stage > 1:
-            # core.enable_estimators_only()
+        core.freeze_backbone()  # freeze except estimator
     
     best_val_loss = 1e9
     for epoch in range(epochs):
@@ -379,19 +450,16 @@ def train():
                     
                     outs_mean, masks = out
                     perf_layers_mean = [evaluation.calculate(args, yf, yt) for yf in outs_mean]
+                    mask0 = torch.where(perf_layers_mean[0] != float("inf"), 1., 0.).bool()
+                    perf_layers_mean[0] = perf_layers_mean[0][mask0]
                     
                     if args.train_stage==0:
                         val_loss = loss_l1s(outs_mean, yt)
                         # val_loss = loss_func(outs_mean[-1], yt)
                     elif args.train_stage==1:
                         val_loss = loss_unc_psnr_1est(outs_mean, masks, yt)
-                    elif args.train_stage==2:   # error predict
-                        # val_loss = loss_error_predict(outs_mean, masks, yt, freeze_mask=False)
-                        val_loss = loss_unc_predict(outs_mean, masks, yt)
-                    elif args.train_stage==3:
-                        # align_biases = core.align_biases
-                        val_loss = loss_choose_ee(outs_mean, masks, yt)
-                        # perf_fused += evaluation.calculate(args, val_fused, yt)
+                    elif args.train_stage==2:   # finetune
+                        val_loss = loss_finetune_eta_1est(outs_mean, masks, yt, cost_ee)
                         
                     total_val_loss += val_loss.item() if torch.is_tensor(val_loss) else val_loss
                     
@@ -432,12 +500,6 @@ def train():
                         torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
                         print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_val_loss))    
                         
-                elif args.train_stage==3:   # error-guided early exits
-                    if best_val_loss > total_val_loss:
-                        best_val_loss = total_val_loss
-                        torch.save(core.state_dict(), os.path.join(out_dir, '_best.t7'))
-                        print('[INFO] Save best performance model %d with performance %.3f' % (epoch, best_val_loss))  
-                
                 if args.wandb: wandb.log(track_dict)
                 torch.save(core.state_dict(), os.path.join(out_dir, '_last.t7'))
                 
@@ -470,12 +532,7 @@ def train():
             elif args.train_stage==1:
                 train_loss = loss_unc_psnr_1est(outs_mean, masks, yt)
             elif args.train_stage==2:   # error predict
-                train_loss = loss_unc_predict(outs_mean, masks, yt, freeze_mask=False)
-            elif args.train_stage==3:
-                # align_biases = core.align_biases
-                # train_loss, _ = loss_alignment(outs_mean, masks, yt, align_biases=None, trainable_mask=False)
-                train_loss += loss_choose_ee(outs_mean, masks, yt)
-            
+                train_loss = loss_finetune_eta_1est(outs_mean, masks, yt, cost_ee)
             
             optimizer.zero_grad()
             train_loss.backward()

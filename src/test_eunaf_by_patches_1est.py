@@ -31,10 +31,12 @@ testset, batch_size_test = data.load_testset(args)
 XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False, num_workers=0)
 
 cost_dict = {
-    'srresnet': [1.1393, 2.0464, 5.194], # dummy values
+    'srresnet': [0, 2.04698, 3.66264, 5.194], 
+    'fsrcnn': [0, 146.42, 315.45, 468.2]
 }
 baseline_cost_dict = {
-    'srresnet': 5.194
+    'srresnet': 5.194,
+    'fsrcnn': 468.2
 }
 
 cost_ees = cost_dict[args.backbone_name]
@@ -455,7 +457,7 @@ def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     costs = (costs - costs.min()) / (costs.max() - costs.min())
     # normalized_masks = np.stack(masks, axis=-1) 
     
-    normalized_masks = np.stack(masks, axis=1)
+    normalized_masks = np.stack(masks, axis=1) 
     normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
     normalized_masks = normalized_masks + eta*costs.reshape(1, -1)
     masks = [
@@ -632,7 +634,7 @@ t = 5e-3
 psnr_unc_map = np.ones((len(XYtest), 12))
 num_blocks = args.n_resgroups // 2 if args.n_resgroups > 0 else args.n_resblocks // 2 
 num_blocks = min(args.n_estimators, num_blocks)
-num_blocks = 3
+num_blocks = 4
 
 patch_size = 32
 step = 28
@@ -661,15 +663,21 @@ def test(eta):
     
     test_patch_psnrs = list()
     
+    real_and_preds = {
+        'imscore': [],
+        'pred_0': [], 'pred_1': [],'pred_2': [], 'pred_3': [],
+        'real_0': [], 'real_1': [],'real_2': [], 'real_3': []
+    }
+    
+    cnt = 0
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
-        # x  = x.cuda()
-        # yt = yt.cuda()
         
-        # add gausian noise
+        # if cnt > 20: break
+        cnt += 1
+
         torch.manual_seed(0)
         # x = x + torch.randn_like(x) * 0.01
         
-        # yt = utils.resize_image_tensor(x, yt, args.scale, args.rgb_range)
         yt = yt.squeeze(0).permute(1,2,0).cpu().numpy()
         yt = utils.modcrop(yt, args.scale)
         yt = torch.tensor(yt).permute(2,0,1).unsqueeze(0)
@@ -685,9 +693,16 @@ def test(eta):
         combine_img_lists = [list() for _ in range(num_blocks)]
         combine_unc_lists = [list() for _ in range(num_blocks)]
         all_last_psnrs = list()
+        
         for lr_img, hr_img in zip(lr_list, hr_list):
             img = lr_img.astype(np.float32) 
             img = img[:, :, :3]
+            gray = cv2.cvtColor((img*255).astype(np.uint8), cv2.COLOR_RGB2GRAY)   
+            laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
+            imscore = cv2.convertScaleAbs(laplac).mean()
+            
+            real_and_preds['imscore'].append(imscore)
+            
             img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).cuda()
             
             gt = hr_img.astype(np.float32) 
@@ -698,6 +713,13 @@ def test(eta):
                 out = core.eunaf_forward(img)
             
             p_yfs, p_masks = out
+            
+            for i in range(len(p_yfs)):
+                p_mask = p_masks.squeeze(0)[i].cpu().item()
+                real_and_preds[f'pred_{i}'].append(p_mask)
+                psnr = evaluation.calculate(args, p_yfs[i], gt)
+                real_and_preds[f'real_{i}'].append(psnr.squeeze(0).item())
+            
             cur_psnr = evaluation.calculate(args, p_yfs[-1], gt)
             all_last_psnrs.append(cur_psnr)
             
@@ -824,12 +846,24 @@ def test(eta):
     uncertainty_val = [u / len(XYtest) for u in uncertainty_val]
     total_val_loss /= len(XYtest)
     total_mask_loss /= len(XYtest)
-
+    
+    return real_and_preds
+    
 if __name__ == '__main__':
     # get 1 patch flops
     utils.calc_flops(core, (1, 3, 32, 32))
     
-    for eta in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0]:
-    # for eta in [0.0, 0.92, 0.95, 0.97, 1.0]:
+    # for eta in [0.0, 0.6, 0.8, 1, 1.2]:
+    # for eta in [0.1, 1.0, 0.45, 0.5]:
+    for eta in np.linspace(0.1, 0.5, 10):
         print("="*20, f"eta = {eta}", "="*20)
-        test(eta)
+        real_and_preds = test(eta)
+        # break
+        
+    import pickle 
+
+    save_path = "/mnt/disk1/nmduong/FusionNet/Supernet-SR/_analyse/" + args.testset_tag
+    os.makedirs(save_path, exist_ok=True)
+    save_path = os.path.join(save_path, "eunaf_dict.pkl")
+    with open(save_path, 'wb') as f:
+        pickle.dump(real_and_preds, f)

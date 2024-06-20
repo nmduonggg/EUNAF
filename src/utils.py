@@ -5,6 +5,7 @@ import shutil
 import numpy as np
 import pandas as pd
 import torch.nn as nn
+import matplotlib.pyplot as plt
 import scipy.stats as stats
 from collections import OrderedDict
 import torch.nn.functional as F
@@ -279,10 +280,25 @@ def get_names_dict(model):
     return names
 
 def laplacian(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
     mask_img = cv2.convertScaleAbs(laplac)
     return mask_img
+
+def save_hmap(hmap, hmap_x, hmap_y, save_path, bins):
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    ax.matshow(hmap, origin='lower')
+    ax.xaxis.set_ticks(np.arange(0,bins,1))
+    ax.set_xticklabels(np.around(np.linspace(min(hmap_x), max(hmap_x), num=bins), 2), rotation=90)
+    ax.xaxis.set_ticks_position('bottom')
+
+    ax.yaxis.set_ticks(np.arange(0,bins,1))
+    ax.set_yticklabels(np.around(np.linspace(min(hmap_y), max(hmap_y), num=bins), 2))
+
+    fig.savefig(save_path, bbox_inches='tight', pad_inches=0.05)
+
+    plt.cla()
+    plt.close("all")
 
 def modcrop(img_in, scale):
     """img_in: Numpy, HWC or HW"""

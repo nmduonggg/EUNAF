@@ -72,7 +72,7 @@ class LQGT_dataset(data.Dataset):
             if img_LQ.ndim == 2:
                 img_LQ = np.expand_dims(img_LQ, axis=2)
 
-        if self.phase == 'test':
+        if self.phase == 'train':
             # if the image size is too small
             H, W, _ = img_GT.shape
             if H < GT_size or W < GT_size:
