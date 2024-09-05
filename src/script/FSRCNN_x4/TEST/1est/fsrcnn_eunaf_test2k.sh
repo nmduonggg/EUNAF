@@ -9,5 +9,5 @@ python test_eunaf_by_patches_1est.py \
     --scale 4 \
     --eval_tag psnr \
     --rgb_channel \
-    --backbone_name fsrcnn
+    --backbone_name fsrcnn \
     # --visualize

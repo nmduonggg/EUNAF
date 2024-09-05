@@ -10,22 +10,19 @@ class DIV2K_validset(Dataset):
         self.N = self.N_raw_image
 
         self.X, self.Y = [], []
-        self.scale = scale
-        
-        for i in tqdm.tqdm(range(self.N_raw_image)):
-            X_im_file_name = root + 'DIV2K_valid_LR_bicubic/X' + str(scale) + '/' + ('%04dx%d.png' % (i+801,scale))
-            X_data = load_image_as_Tensor(X_im_file_name, style, rgb_range)
-            self.X.append(X_data)
-
-            Y_im_file_name = root + 'DIV2K_valid_HR/' + ('%04d.png' % (i+801))
-            Y_data = load_image_as_Tensor(Y_im_file_name, style, rgb_range)
-            self.Y.append(Y_data)
+        self.scale = 4
+        self.root = root
+        self.style=style
+        self.rgb_range = rgb_range
 
     def __len__(self):
         return self.N
 
     def __getitem__(self, idx):
-        im_lr = self.X[idx]
-        im_hr = self.Y[idx]
+        X_im_file_name = self.root + 'DIV2K_valid_LR_bicubic/X' + str(self.scale) + '/' + ('%04dx%d.png' % (idx+801,self.scale))
+        X_data = load_image_as_Tensor(X_im_file_name, self.style, self.rgb_range)
 
-        return im_lr, im_hr
+        Y_im_file_name = self.root + 'DIV2K_valid_HR/' + ('%04d.png' % (idx+801))
+        Y_data = load_image_as_Tensor(Y_im_file_name, self.style, self.rgb_range)
+        
+        return X_data, Y_data

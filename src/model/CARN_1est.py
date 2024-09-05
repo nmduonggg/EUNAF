@@ -3,6 +3,7 @@ import math
 import torch.nn as nn
 import torch.nn.functional as F
 from model import common
+import numpy as np
 
 class EResidualBlock(nn.Module):
     def __init__(self,
@@ -189,6 +190,9 @@ class EUNAF_CARN_1est(CARN_M):
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimator = Estimator()
         
+        self.cost_dict = torch.tensor([0, 778.55, 868.86, 1161.72]) / 1161.72
+        self.counts = [0, 0, 0, 0]
+        
     def init_intermediate_out(self, num_blocks, conv,
                               out_channels=1, is_estimator=False, 
                               last_act=False):
@@ -202,19 +206,19 @@ class EUNAF_CARN_1est(CARN_M):
                 
                 if i==num_blocks-1:
                     m_tail = [
-                        nn.Conv2d(self.nf, self.nf*4, 3, 1, 1, groups=self.group), nn.ReLU(),
+                        nn.Conv2d(self.nf, 32*4, 3, 1, 1, groups=self.group), nn.LeakyReLU(0.1),
                         nn.PixelShuffle(2),
-                        nn.Conv2d(self.nf, self.nf*2, 3, 1, 1, groups=self.group), nn.ReLU(),
+                        nn.Conv2d(32, 32*4, 3, 1, 1, groups=self.group), nn.LeakyReLU(0.1),
                         nn.PixelShuffle(2), 
-                        nn.Conv2d(self.nf//2, out_channels, 3, 1, 1)
+                        nn.Conv2d(32, out_channels, 3, 1, 1)
                     ] 
                 else:
                     m_tail = [
-                        nn.Conv2d(self.nf, self.nf*4, 3, 1, 1, groups=self.group), nn.ReLU(),
+                        nn.Conv2d(self.nf, 16*4, 3, 1, 1, groups=self.group), nn.LeakyReLU(0.1),
                         nn.PixelShuffle(2),
-                        nn.Conv2d(self.nf, self.nf, 3, 1, 1, groups=self.group), nn.ReLU(),
+                        nn.Conv2d(16, 16*4, 3, 1, 1, groups=self.group), nn.LeakyReLU(0.1),
                         nn.PixelShuffle(2), 
-                        nn.Conv2d(self.nf//4, out_channels, 3, 1, 1)
+                        nn.Conv2d(16, out_channels, 3, 1, 1)
                     ] 
             common.initialize_weights(m_tail, 0.1)
             if last_act: m_tail.append(nn.ELU())
@@ -229,6 +233,33 @@ class EUNAF_CARN_1est(CARN_M):
             if p.requires_grad:
                 print(n, end=' ')
                 
+    def forward_backbone(self, x):
+        x = self.sub_mean(x)
+        x = self.entry(x)
+        c0 = o0 = x
+
+        b1 = self.b1(o0)
+        c1 = torch.cat([c0, b1], dim=1)
+        o1 = self.c1(c1)
+        
+        b2 = self.b2(o1)
+        c2 = torch.cat([c1, b2], dim=1)
+        o2 = self.c2(c2)
+        
+        b3 = self.b3(o2)
+        c3 = torch.cat([c2, b3], dim=1)
+        o3 = self.c3(c3)
+
+        out = self.upsample(o3, scale=self.scale)
+
+        out = self.exit(out)
+        out = self.add_mean(out)
+        
+        outs = [None, None, None, out]
+        masks = None
+
+        return outs, masks
+                
     def forward(self, x):
         
         masks = self.estimator(x)
@@ -242,20 +273,20 @@ class EUNAF_CARN_1est(CARN_M):
         c1 = torch.cat([c0, b1], dim=1)
         o1 = self.c1(c1)
         
-        ee1 = self.predictors[0](o1)
-        ee1 = self.add_mean(ee1)
-        
         b2 = self.b2(o1)
         c2 = torch.cat([c1, b2], dim=1)
         o2 = self.c2(c2)
-        
-        ee2 = self.predictors[1](o2)
-        ee2 = self.add_mean(ee2)
         
         b3 = self.b3(o2)
         
         c3 = torch.cat([c2, b3], dim=1)
         o3 = self.c3(c3)
+        
+        ee1 = self.predictors[0](o3)
+        ee1 = self.add_mean(ee1)
+        
+        ee2 = self.predictors[1](o3)
+        ee2 = self.add_mean(ee2)
 
         out = self.upsample(o3, scale=self.scale)
 
@@ -265,7 +296,7 @@ class EUNAF_CARN_1est(CARN_M):
         outs = [ee0, ee1, ee2, out]
 
         return outs, masks
-    
+                
     def eunaf_forward(self, x):
         
         masks = self.estimator(x)
@@ -279,20 +310,20 @@ class EUNAF_CARN_1est(CARN_M):
         c1 = torch.cat([c0, b1], dim=1)
         o1 = self.c1(c1)
         
-        ee1 = self.predictors[0](o1)
-        ee1 = self.add_mean(ee1)
-        
         b2 = self.b2(o1)
         c2 = torch.cat([c1, b2], dim=1)
         o2 = self.c2(c2)
-        
-        ee2 = self.predictors[1](o2)
-        ee2 = self.add_mean(ee2)
         
         b3 = self.b3(o2)
         
         c3 = torch.cat([c2, b3], dim=1)
         o3 = self.c3(c3)
+        
+        ee1 = self.predictors[0](o3)
+        ee1 = self.add_mean(ee1)
+        
+        ee2 = self.predictors[1](o3)
+        ee2 = self.add_mean(ee2)
 
         out = self.upsample(o3, scale=self.scale)
 
@@ -302,3 +333,57 @@ class EUNAF_CARN_1est(CARN_M):
         outs = [ee0, ee1, ee2, out]
 
         return outs, masks
+    
+    def eunaf_infer(self, x, eta=0.0, imscore=None):
+        
+        masks = self.estimator(x)
+        # norm_masks = masks - torch.amin(masks, dim=1) / (torch.amax(masks, dim=1) - torch.amin(masks, dim=1))
+        norm_masks = masks
+        
+        imscores = np.array(imscore) # N
+        q1 = 10
+        p0 = (imscores <= q1).astype(int)
+        blank_vector = torch.zeros_like(masks)
+        blank_vector[:, 0] = torch.tensor(p0)
+        
+        path_decision = masks + eta*self.cost_dict.to(x.device) - 1.0 * blank_vector.to(x.device)
+        decision = torch.argmin(path_decision).int().item()
+        self.counts[decision] += 1
+        
+        if decision==0:
+            return F.interpolate(x, scale_factor=self.scale, mode='bicubic', align_corners=False)
+        
+        x = self.sub_mean(x)
+        x = self.entry(x)
+        c0 = o0 = x
+        
+        b1 = self.b1(o0)
+        c1 = torch.cat([c0, b1], dim=1)
+        o1 = self.c1(c1)
+        
+        b2 = self.b2(o1)
+        c2 = torch.cat([c1, b2], dim=1)
+        o2 = self.c2(c2)
+        
+        b3 = self.b3(o2)
+        
+        c3 = torch.cat([c2, b3], dim=1)
+        o3 = self.c3(c3)
+        
+        if decision==1:
+            ee1 = self.predictors[0](o3)
+            ee1 = self.add_mean(ee1)
+            
+        if decision==2:
+            ee2 = self.predictors[1](o3)
+            ee2 = self.add_mean(ee2)
+
+        out = self.upsample(o3, scale=self.scale)
+
+        out = self.exit(out)
+        out = self.add_mean(out)
+        
+        # outs = [ee0, ee1, ee2, out]
+
+        # return outs, masks
+        return out

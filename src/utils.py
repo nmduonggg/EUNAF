@@ -114,20 +114,59 @@ def combine(sr_list, num_h, num_w, h, w, patch_size, step, scale):
         sr_img[i*step*scale:i*step*scale+(patch_size-step)*scale,:,:]/=2
     return sr_img
 
+def combine_addmask(sr_list, color_list, num_h, num_w, h, w, patch_size, step, scale):
+    index=0
+    sr_img = np.zeros((h*scale, w*scale, 3), 'float32')
+    color_raws = np.zeros((num_h, num_w, 3))
+    for i in range(num_h):
+        for j in range(num_w):
+            sr_img[i*step*scale:i*step*scale+patch_size*scale, j*step*scale:j*step*scale+patch_size*scale,:] += sr_list[index]
+            color_raws[i, j, :] = color_list[index][10, 10, :]    # take color only
+            index+=1
+    sr_img=sr_img.astype('float32')
+
+    for j in range(1,num_w):
+        sr_img[:,j*step*scale:j*step*scale+(patch_size-step)*scale,:]/=2
+
+    for i in range(1,num_h):
+        sr_img[i*step*scale:i*step*scale+(patch_size-step)*scale,:,:]/=2
+        
+    sr_img = (sr_img * 255).astype(np.uint8)
+    sr_img = cv2.cvtColor(sr_img, cv2.COLOR_RGB2BGR)
+        
+    index2 = 0
+    for i in range(num_h):
+        for j in range(num_w):
+            # add mask
+            alpha = 1
+            beta = 0.35
+            gamma = 0
+            bbox1 = [j * step * scale + 8, i * step * scale + 8,
+                    j * step * scale + patch_size * scale - 9,
+                    i * step * scale + patch_size * scale - 9]  # xl,yl,xr,yr
+            zeros1 = np.zeros((sr_img.shape), 'float32')
+            mask2 = cv2.rectangle(zeros1, (bbox1[0]+1, bbox1[1]+1), (bbox1[2]-1, bbox1[3]-1), color=list(color_raws[i, j, :]), thickness=-1)# hard red
+            mask2 = mask2.astype(np.uint8)
+            sr_img = cv2.addWeighted(sr_img, alpha, mask2, beta, gamma)
+            index2+=1
+            
+    sr_img = cv2.cvtColor(sr_img, cv2.COLOR_BGR2RGB)
+    return sr_img
+
 def apply_alpha_mask(foreground, background, alpha):
     # Convert uint8 to float
-    foreground = foreground.astype(float)
-    background = background.astype(float)
+    foreground = (foreground.astype(float)*255).astype(np.uint8)
+    background = (background.astype(float)*255).astype(np.uint8)
 
     # Multiply the foreground with the alpha matte
-    foreground = cv2.multiply(alpha, foreground)
+    # foreground = cv2.multiply(alpha, foreground)
     
     # Multiply the background with (1 - alpha)
-    background = cv2.multiply(1.0 - alpha, background)
+    # background = cv2.multiply(1.0 - alpha, background)
     
     # Add the masked foreground and background.
-    outImage = cv2.add(foreground, background)
-
+    # outImage = cv2.add(foreground, background)
+    outImage = cv2.addWeighted(foreground, alpha, background, beta=0.2, gamma=0)
     # Return a normalized output image for display
     return outImage
 

@@ -19,6 +19,8 @@ import utils
 from option import parser
 from template import test_template as template
 
+import matplotlib.cm as cm
+
 
 args = parser.parse_args()
 
@@ -32,11 +34,13 @@ XYtest = torchdata.DataLoader(testset, batch_size=batch_size_test, shuffle=False
 
 cost_dict = {
     'srresnet': [0, 2.04698, 3.66264, 5.194], 
-    'fsrcnn': [0, 146.42, 315.45, 468.2]
+    'fsrcnn': [0, 146.42, 315.45, 468.2],
+    'carn': [0, 0.779, 0.868, 1.15]
 }
 baseline_cost_dict = {
     'srresnet': 5.194,
-    'fsrcnn': 468.2
+    'fsrcnn': 468.2,
+    'carn': 1.15
 }
 
 cost_ees = cost_dict[args.backbone_name]
@@ -448,23 +452,39 @@ def visualize_classified_patch_level(p_yfs, p_masks, im_idx):
     
     return classified_map
 
-def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
+def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta, visualize=False, imscore=None):
     # p_yfs, p_masks: all patches of yfs and masks of all num block stages [[HxWxC]*n_patches]xnum_blocks
     yfs = [np.stack(pm, axis=0) for pm in p_yfs]  # PxHxWxC
     masks = [np.concatenate(pm, axis=0) for pm in p_masks] # Bx3
+    per_class = 0
+    if imscore is not None:
+        imscores = np.array(imscore) # N
+        q1, q2, q3 = np.percentile(imscore, [25, 50, 75])
+        
+        q1 = 10
+        p0 = (imscores <= q1).astype(int)
+        p1 = (np.logical_and(q1 < imscores, imscores <= q2)).astype(int)
+        p2 = (np.logical_and(q2 < imscores, imscores <= q3)).astype(int)
+        p3 = (q3 < imscores).astype(int)
+        
+        per_class = torch.tensor(np.stack([p0*1.0, p1*0.00, p2*0.00, p3*0.00], axis=-1))   # PxN
     
     costs = np.array(cost_ees)
     costs = (costs - costs.min()) / (costs.max() - costs.min())
+    # costs = costs / costs.max()
     # normalized_masks = np.stack(masks, axis=-1) 
     
     normalized_masks = np.stack(masks, axis=1) 
-    normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
+    # normalized_masks = (normalized_masks - np.min(normalized_masks, axis=-1, keepdims=True)) / (np.max(normalized_masks, axis=-1, keepdims=True) - np.min(normalized_masks, axis=-1, keepdims=True))
     normalized_masks = normalized_masks + eta*costs.reshape(1, -1)
     masks = [
         normalized_masks[:, i] for i in range(len(yfs)) # PxN
     ]
     
     all_masks = torch.tensor(np.stack(masks, axis=-1)) # P -> PxN
+    
+    all_masks -= per_class
+    
     raw_indices = torch.argmin(all_masks, dim=-1)    # 0->N-1, P
     onehot_indices = F.one_hot(raw_indices, num_classes=len(masks)).float() # PxN
     
@@ -482,6 +502,48 @@ def fuse_classified_patch_level(p_yfs, p_masks, im_idx, eta):
     
     fused_classified = [processed_outs[i,...] for i in range(processed_outs.shape[0])]
     
+    if visualize:
+        # class_colors = [
+        #     [0, 0, 255],    # blue
+        #     [19, 239, 85],  # green
+        #     [235, 255, 128],    # yellow
+        #     [255, 0, 0] # red
+        # ]
+    
+        class_colors = [
+            [0, 255, 0],  # green
+            [255, 0, 0],    # blue
+            [0, 255, 255],    # yellow
+            [0, 0, 255] # red
+        ]
+    
+        processed_colors = 0
+        chosen_colors = []
+        
+        for i in range(len(p_masks)):
+            fout = np.zeros((yfs[i][0].shape), 'float32')
+            # fout = np.array(class_colors[i]).reshape(1, 1, 1, -1)   # BCHW
+            # fout = fout * np.ones_like(yfs[i])
+            # fout[:, :8, :, :] = 0
+            # fout[:, -8:, :, :] = 0
+            # fout[:, 8:-8, :8, :] = 0
+            # fout[:, 8:-8, -8:, :] = 0
+            
+            h = int(fout.shape[0]-1)
+            w = int(fout.shape[0]-1)
+            mask2 = cv2.rectangle(fout, (0, 0), (h, w), color=class_colors[i], thickness=-1)
+            fout = np.repeat(mask2.reshape(1, *(mask2.shape)), yfs[i].shape[0], axis=0)
+            
+            cur_mask = onehot_indices[..., i].numpy().astype(np.uint8)
+            cur_mask = cur_mask.reshape(-1, 1, 1, 1)
+            cur_fout = fout * cur_mask
+            
+            processed_colors += cur_fout
+        
+        fused_colors = [processed_colors[i,...] for i in range(processed_colors.shape[0])]
+        
+        return fused_classified, percents, fused_colors
+            
     return fused_classified, percents
 
 def visualize_edge_map(patches, im_idx, scale):
@@ -638,7 +700,9 @@ num_blocks = 4
 
 patch_size = 32
 step = 28
-alpha = 0.7
+alpha = 1.0
+beta = 0.2
+gamma = 0
 
 def test(eta):
     psnrs_val = [0 for _ in range(num_blocks)]
@@ -650,6 +714,11 @@ def test(eta):
     psnr_fuse_err, ssim_fuse_err = 0.0, 0.0
     psnr_fuse_unc, ssim_fuse_unc = 0.0, 0.0
     psnr_fuse_auto, ssim_fuse_auto = 0.0, 0.0
+    
+    # for visualization
+    outdir = 'visualization_infer/'
+    patch_dir = os.path.join(outdir, 'patches')
+    os.makedirs(patch_dir, exist_ok=True)
     
     #walk through the test set
     core.eval()
@@ -668,11 +737,11 @@ def test(eta):
         'pred_0': [], 'pred_1': [],'pred_2': [], 'pred_3': [],
         'real_0': [], 'real_1': [],'real_2': [], 'real_3': []
     }
+    visualize = True
     
     cnt = 0
     for batch_idx, (x, yt) in tqdm.tqdm(enumerate(XYtest), total=len(XYtest)):
-        
-        # if cnt > 20: break
+        if batch_idx != 27: continue
         cnt += 1
 
         torch.manual_seed(0)
@@ -694,14 +763,26 @@ def test(eta):
         combine_unc_lists = [list() for _ in range(num_blocks)]
         all_last_psnrs = list()
         
-        for lr_img, hr_img in zip(lr_list, hr_list):
+        current_imscore = []
+        
+        for pid, (lr_img, hr_img) in enumerate(zip(lr_list, hr_list)):
+            name = f'im_{batch_idx}_patch_{pid}'
+            
             img = lr_img.astype(np.float32) 
             img = img[:, :, :3]
+            
+            plt.imsave(os.path.join(patch_dir, f'{name}_LR.jpg'), img)
+            
             gray = cv2.cvtColor((img*255).astype(np.uint8), cv2.COLOR_RGB2GRAY)   
             laplac = cv2.Laplacian(gray, cv2.CV_16S, ksize=3)
-            imscore = cv2.convertScaleAbs(laplac).mean()
+            imscore = cv2.convertScaleAbs(laplac)
+            
+            plt.imsave(os.path.join(patch_dir, f'{name}_Edge.jpg'), imscore, cmap=cm.gray)
+            
+            imscore = imscore.mean()
             
             real_and_preds['imscore'].append(imscore)
+            current_imscore.append(imscore)
             
             img = torch.from_numpy(img).permute(2,0,1).unsqueeze(0).cuda()
             
@@ -714,11 +795,34 @@ def test(eta):
             
             p_yfs, p_masks = out
             
+            if visualize: fig, axs = plt.subplots(nrows=1, ncols=5, figsize=(20, 4))
+            
             for i in range(len(p_yfs)):
                 p_mask = p_masks.squeeze(0)[i].cpu().item()
                 real_and_preds[f'pred_{i}'].append(p_mask)
                 psnr = evaluation.calculate(args, p_yfs[i], gt)
+                
+                if visualize:
+                    np_pyf = p_yfs[i].cpu().squeeze(0).permute(1,2,0).numpy()
+                    np_pyf = np.clip(np_pyf, a_min=0, a_max=1)
+                    axs[i].imshow(np_pyf)
+                    axs[i].set_title(f'{round(psnr.squeeze(0).item(), 2)} ({round(p_mask, 2)})')
+                    axs[i].axis('off')
+                    
+                    plt.imsave(os.path.join(patch_dir, f'{name}_{i}.jpg'), np_pyf)
                 real_and_preds[f'real_{i}'].append(psnr.squeeze(0).item())
+                
+                # name += f'_{round(psnr.squeeze(0).item(), 2)}({round(p_mask, 2)})'
+                
+            if visualize:
+                axs[-1].imshow(hr_img)
+                axs[-1].set_title("GT")
+                axs[-1].axis('off')
+                
+                plt.imsave(os.path.join(patch_dir, f'{name}_GT.jpg'), hr_img)
+                plt.savefig(os.path.join(patch_dir, f'{name}.jpg'))
+                plt.cla()
+                plt.close('all')
             
             cur_psnr = evaluation.calculate(args, p_yfs[-1], gt)
             all_last_psnrs.append(cur_psnr)
@@ -747,7 +851,13 @@ def test(eta):
         unc_v_layers = [m.mean().cpu().item() for m in masks]
         # error_v_layers = [torch.abs(yt-yf).mean().item() for yf in yfs]
         
-        fused_auto_patches, percents_auto = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx, eta)
+        #### FUSION START HERE ####
+        fusion_outputs = fuse_classified_patch_level(combine_img_lists, combine_unc_lists, batch_idx, eta, visualize=visualize, imscore=current_imscore)
+        
+        if len(fusion_outputs) == 2:
+            fused_auto_patches, percents_auto = fusion_outputs
+        else:
+            fused_auto_patches, percents_auto, fused_color_map = fusion_outputs
         
         patch_psnr_1_img = list()
         for patch_f, patch_t in zip(fused_auto_patches, hr_list):
@@ -759,6 +869,17 @@ def test(eta):
         test_patch_psnrs += patch_psnr_1_img
         
         fused_auto_tensor = torch.from_numpy(utils.combine(fused_auto_patches, num_h, num_w, h, w, patch_size, step, args.scale)).permute(2,0,1).unsqueeze(0)
+        
+        if visualize:
+                
+            # fused_color_map = utils.combine(fused_color_map, num_h, num_w, h, w, patch_size, step, args.scale).astype(np.uint8) / 255.0
+            yt_image = yt.squeeze(0).cpu().permute(1,2,0).numpy()
+            # fused_color_map = utils.apply_alpha_mask(yt_image, fused_color_map, alpha)
+            # fused_color_map = fused_color_map.astype(np.uint8)
+            fused_color_map = utils.combine_addmask(fused_auto_patches, fused_color_map, num_h, num_w, h, w, patch_size, step, args.scale).astype(np.uint8)
+            plt.imsave(os.path.join(outdir, f'./vis_{batch_idx}_{eta}.jpg'), fused_color_map)
+        
+        print("Current percent: ", np.sum(np.array(percents_auto) * np.array(cost_ees)) * 100 / baseline_cost)
         percent_total_auto += np.array(percents_auto)
         cur_auto_psnr, cur_auto_ssim = evaluation.calculate_all(args, fused_auto_tensor, yt)
         psnr_fuse_auto += cur_auto_psnr
@@ -854,8 +975,13 @@ if __name__ == '__main__':
     utils.calc_flops(core, (1, 3, 32, 32))
     
     # for eta in [0.0, 0.6, 0.8, 1, 1.2]:
-    # for eta in [0.1, 1.0, 0.45, 0.5]:
-    for eta in np.linspace(0.1, 0.5, 10):
+    # for eta in [0.12, 0.2, 0.3, 0.35, 0.38, 0.42, 0.45, 0.48, 0.55, 0.58, 0.6, 0.65]:
+    # for eta in np.linspace(0.0, 0.4, 10):
+    #     print("="*20, f"eta = {eta}", "="*20)
+    #     real_and_preds = test(eta)
+    # for eta in np.linspace(0.45, 0.5, 8):
+    # for eta in np.linspace(0.0, 0.04, 10):
+    for eta in [0.036]:
         print("="*20, f"eta = {eta}", "="*20)
         real_and_preds = test(eta)
         # break

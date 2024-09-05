@@ -1,4 +1,5 @@
 import functools
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from model import common
@@ -118,6 +119,8 @@ class EUNAF_MSRResNet_1est(MSRResNet):
 
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel, last_act=False)
         self.estimator = Estimator()
+        self.cost_dict = torch.tensor([0, 2.04698, 3.66264, 5.194]) / 5.194 # norm cost
+        self.counts = [0, 0, 0, 0]
             
     def get_n_estimators(self):
         return self.n_estimators
@@ -170,6 +173,26 @@ class EUNAF_MSRResNet_1est(MSRResNet):
                 p.requires_grad = False
             if p.requires_grad:
                 print(n, end=' ')
+                
+    def forward_backbone(self, x):
+        fea = self.lrelu(self.conv_first(x))
+        for i in range(self.nb):
+            out = self.recon_trunk[i](fea)
+
+        if self.upscale == 4:
+            out = self.lrelu(self.pixel_shuffle(self.upconv1(out)))
+            out = self.lrelu(self.pixel_shuffle(self.upconv2(out)))
+        elif self.upscale == 3 or self.upscale == 2:
+            out = self.lrelu(self.pixel_shuffle(self.upconv1(out)))
+
+        out = self.conv_last(self.lrelu(self.HRconv(out)))
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        out += base
+        
+        outs = [None, None, None, out]
+        masks = None
+        
+        return outs, masks
     
     def forward(self, x):
         
@@ -248,3 +271,57 @@ class EUNAF_MSRResNet_1est(MSRResNet):
         outs.append(out)
                         
         return outs, masks
+    
+    def eunaf_infer(self, x, eta=0.0, imscore=None):
+        assert x.shape[0]==1, "only 1 patch at a time"
+        masks = self.estimator(x)   # Bx4
+        # norm_masks = masks - torch.amin(masks, dim=1) / (torch.amax(masks, dim=1) - torch.amin(masks, dim=1))
+        norm_masks = masks
+        
+        imscores = np.array(imscore) # N
+        q1 = 10
+        p0 = (imscores <= q1).astype(int)
+        blank_vector = torch.zeros_like(masks)
+        blank_vector[:, 0] = torch.tensor(p0)
+        
+        path_decision = masks + eta*self.cost_dict.to(x.device) - 1.0 * blank_vector.to(x.device)
+        decision = torch.argmin(path_decision).int().item()
+        self.counts[decision] += 1
+        
+        outs = list()
+        base = F.interpolate(x, scale_factor=self.upscale, mode='bilinear', align_corners=False)
+        
+        if decision==0:
+            return F.interpolate(x, scale_factor=self.upscale, mode='bicubic', align_corners=False)
+        
+        
+        fea = self.lrelu(self.conv_first(x))
+        tmp_gap_range = [self.nb-1, self.nb-1]
+        
+        cnt = 0
+        for i in range(self.nb):
+            fea = self.recon_trunk[i](fea)
+            
+            if i == 8:  # ee 1
+                tmp_out = self.predictors[0](fea)
+                # outs.append(tmp_out + base)
+                if decision==1: return tmp_out+base
+            
+            if i == self.nb-1:  # ee 2
+                tmp_out = self.predictors[1](fea)
+                # outs.append(tmp_out+base)
+                if decision==2: return tmp_out + base
+                
+                        
+        if self.upscale == 4:
+            fea = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
+            out = self.lrelu(self.pixel_shuffle(self.upconv2(fea)))
+        elif self.upscale == 3 or self.upscale == 2:
+            out = self.lrelu(self.pixel_shuffle(self.upconv1(fea)))
+        out = self.conv_last(self.lrelu(self.HRconv(out)))  
+        
+        out += base
+        # outs.append(out)
+                        
+        # return outs, masks
+        return out 

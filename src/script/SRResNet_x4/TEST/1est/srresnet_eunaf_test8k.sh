@@ -1,4 +1,4 @@
-python test_eunaf_by_patches_1est.py \
+python test_eunaf_by_patches_1est_parallel.py \
     --template EUNAF_SRResNetxN_1est \
     --testset_tag Test8K \
     --N 100 \

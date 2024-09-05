@@ -1,6 +1,7 @@
 import torch.nn as nn
 from model import common
 import torch
+import numpy as np
 
 import functools
 import torch.nn as nn
@@ -72,6 +73,9 @@ class EUNAF_FSRCNN_1est(FSRCNN_net):
         self.predictors = self.init_intermediate_out(self.n_estimators-1, conv, out_channels=args.input_channel)
         self.estimator = Estimator()
         
+        self.cost_dict = torch.tensor([0, 146.42, 315.45, 468.2]) / 468.2 # norm cost
+        self.counts = [0, 0, 0, 0]
+        
     def get_n_estimators(self):
         return self.n_estimators
         
@@ -110,6 +114,25 @@ class EUNAF_FSRCNN_1est(FSRCNN_net):
                 p.requires_grad = False
             else:
                 print(n, end="; ")
+                
+    def unfreeze_predictors(self):
+        for n, p in self.named_parameters():
+            if 'estimator' in n:
+                p.requires_grad = False
+            else:
+                p.requires_grad = True
+                print(n, end="; ")
+                
+    def forward_backbone(self, x):
+        fea = self.head_conv(x)
+        for i, b in enumerate(self.body_conv):
+            fea = self.body_conv[i](fea)
+        out = self.tail_conv(fea)
+        
+        outs = [None, None, None, out]
+        masks = None
+        
+        return outs, masks
 
     def forward(self, x):
         masks = self.estimator(x)
@@ -158,3 +181,40 @@ class EUNAF_FSRCNN_1est(FSRCNN_net):
         outs.append(out)
         
         return outs, masks
+    
+    def eunaf_infer(self, x, eta=0.0, imscore=None):
+        assert x.shape[0]==1, "only 1 patch at a time"
+        masks = self.estimator(x)   # Bx4
+        # norm_masks = masks - torch.amin(masks, dim=1) / (torch.amax(masks, dim=1) - torch.amin(masks, dim=1))
+        norm_masks = masks        
+        imscores = np.array(imscore) # N
+        q1 = 10
+        p0 = (imscores <= q1).astype(int)
+        blank_vector = torch.zeros_like(masks)
+        blank_vector[:, 0] = torch.tensor(p0)
+        
+        path_decision = masks + eta*self.cost_dict.to(x.device) - 1.0 * blank_vector.to(x.device)
+        decision = torch.argmin(path_decision).int().item()
+        self.counts[decision] += 1
+        
+        fea = self.head_conv(x)
+        if decision == 0:
+            return F.interpolate(x, scale_factor=self.upscale, mode='bicubic', align_corners=False)
+        
+        for i, b in enumerate(self.body_conv):
+            fea = self.body_conv[i](fea)
+            
+            if i==2 and decision==1:
+                tmp_out = self.predictors[0](fea)
+                # outs.append(tmp_out)
+                return tmp_out
+            
+            if (i==len(self.body_conv)-2) and decision==2: 
+                tmp_out = self.predictors[1](fea)
+                # outs.append(tmp_out)
+                return tmp_out
+        
+        out = self.tail_conv(fea)
+        # outs.append(out)
+        
+        return out

@@ -97,10 +97,6 @@ num_blocks = min(num_blocks//2, args.n_estimators)
 
 num_blocks = 4
 
-# params = []
-# for n, p in core.named_parameters():
-#     if p.requires_grad:
-#        params.append(p)
     
 ee_params, tail_params = list(), list()
 for n, p in core.named_parameters():
@@ -112,10 +108,16 @@ for n, p in core.named_parameters():
 
 optimizer = Adam([
         {"params": ee_params}, 
-        {"params": tail_params, 'lr': 1e-8}
+        {"params": tail_params, 'lr': 1e-7}
     ], lr=lr, weight_decay=args.weight_decay)
 
+
+# params = []
+# for n, p in core.named_parameters():
+#     if p.requires_grad:
+#        params.append(p)
 # optimizer = Adam(params, lr=lr, weight_decay=args.weight_decay)
+
 lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
 early_stopper = utils.EarlyStopper(patience=15)
 loss_func = loss.create_loss_func(args.loss)
@@ -131,6 +133,8 @@ def loss_l1s(yfs, yt):
     l1_loss = 0
     for i, yf in enumerate(yfs[1:]):    # skip bicubic
         l1_loss += loss_func(yf, yt)
+        # if i==len(yfs)-2:
+        #     l1_loss += loss_func(yf, yt)
     return l1_loss
 
 def loss_esu(yfs, masks, yt, freeze_mask=False):
@@ -376,20 +380,21 @@ def loss_finetune_eta_1est(yfs, masks, yt, cost_ee):
     
     if cost_ee.size(1)==4:
         cost_ee = cost_ee[:, 1:]
-    norm_cost = cost_ee - cost_ee.amin(cost_ee, dim=1, keepdim=True) \
+    norm_cost = cost_ee - torch.amin(cost_ee, dim=1, keepdim=True) \
         / (torch.amax(cost_ee, dim=1, keepdim=True) - torch.amin(cost_ee, dim=1, keepdim=True) + 1e-9)
         
-    bs = norm_all.size(0)
-    norm_all == norm_ee_mask + norm_cost * torch.rand(bs, 1).to(norm_cost.device)
+    bs = norm_ee_mask.size(0)
+    norm_all = norm_ee_mask + (norm_cost * torch.rand(bs, 1)).to(norm_ee_mask.device)
     
     indices = torch.argmin(norm_all, dim=1)  # B
-    onehot_indices = F.one_hot(indices, num_classes=len(yfs)-1) # Bx(N-1)
+    onehot_indices = F.one_hot(indices, num_classes=len(yfs)-1).to(norm_ee_mask.device) # Bx(N-1)
     
     l1_loss = 0
     for i, yf in enumerate(yfs[1:]):    # skip bicubic
-        yf = torch.mul(yf, onehot_indices[:, i:i+1])
-        yt = torch.mul(yt, onehot_indices[:, i:i+1])
-        l1_loss += loss_func(yf, yt)
+        
+        yf_0 = torch.mul(yf, onehot_indices[:, i:i+1].reshape(-1, 1, 1, 1))
+        yt_0 = torch.mul(yt, onehot_indices[:, i:i+1].reshape(-1, 1, 1, 1))
+        l1_loss += loss_func(yf_0, yt_0)
     
     return l1_loss
 
@@ -414,8 +419,10 @@ def train():
     cost_ee = np.array(cost_dict[args.backbone_name]) / baseline_cost_dict[args.backbone_name]
     cost_ee = torch.tensor(cost_ee).unsqueeze(0)    # 1xN
     
-    if args.train_stage > 0:
+    if args.train_stage == 1:
         core.freeze_backbone()  # freeze except estimator
+    elif args.train_stage == 2:
+        core.unfreeze_predictors()
     
     best_val_loss = 1e9
     for epoch in range(epochs):
